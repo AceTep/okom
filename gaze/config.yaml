@@ -6,3 +6,5 @@ camera:
   height: 720
   fps: 30           # requested; the camera may deliver less in dim light
   fourcc: MJPG      # MJPG allows 720p at full rate over USB; empty string = driver default
+  fixed_framerate: true  # Linux: stop the camera from slowing to ~15 fps in dim light
+                         # (image gets slightly darker); restored on exit

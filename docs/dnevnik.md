@@ -122,3 +122,48 @@ Kronološki zapis važnih radnji i odluka. Najnovije na dnu.
 - 64 testa prolaze.
 
 **README** opisuje što projekt radi, arhitekturu, stanje, postavljanje i pokretanje.
+
+### Kamera: pronađen i popravljen pad na 15 FPS
+
+**Simptom:** `gaze.camera` je davao 15 FPS i uz ugašeno i uz upaljeno svjetlo.
+
+**Dijagnoza, korak po korak** (sve provjere su samo čitale, osim jedne kratke probe čija je postavka vraćena):
+1. Iz drivera su pročitani podržani načini rada (V4L2 `VIDIOC_ENUM_FRAMEINTERVALS`). MJPG 1280×720 i 640×480 podržavaju 30 FPS, a YUYV 1280×720 samo 10 FPS.
+2. Postavke kamere: `exposure_auto = 3` (automatska ekspozicija) i `exposure_dynamic_framerate = 1`, što znači da kamera smije usporiti snimanje da dulje osvjetljava sliku.
+3. Proba s privremeno ugašenim `exposure_dynamic_framerate` dala je 28,2 → 30,0 FPS. **Ali** 28,2 FPS i s tvorničkom postavkom nije objašnjavalo 15 FPS iz `gaze.camera`.
+4. Jedina preostala razlika bila je `CAP_PROP_BUFFERSIZE = 1` u `gaze/camera.py`. Mjereno naizmjence u istom svjetlu:
+
+| `BUFFERSIZE` | FPS |
+| --- | --- |
+| zadano (4) | 30,0 / 27,8 |
+| 1 | 15,8 / 15,0 |
+
+**Uzrok:** naša greška. `BUFFERSIZE = 1` je postavljen da se uvijek obrađuje svježa slika, ali s jednim međuspremnikom kamera nema kamo snimiti sljedeću sliku dok se trenutna čita, pa preskoči svaku drugu (30 / 2 = 15). Promjena nije bila izmjerena kad je uvedena. **Pouka:** svaku promjenu postavki kamere odmah izmjeriti.
+
+Drugi, manji faktor je `exposure_dynamic_framerate`. Prvo mjerenje navečer, prije `camera.py`, dalo je 15 FPS i bez `BUFFERSIZE`, vjerojatno zbog slabog svjetla.
+
+**Popravak**
+- `BUFFERSIZE = 1` je maknut, a u kodu stoji komentar zašto se ne smije vratiti.
+- **Svježina slike je riješena zasebnom niti.** Nit stalno čita kameru punom brzinom i čuva samo zadnju sliku. `read()` vraća najnoviju sliku koja još nije vraćena. Kad je obrada sporija od kamere, stare slike se preskaču (brojač `skipped`) umjesto da se gomilaju u redu, gdje bi bile stare i do ~130 ms (4 slike).
+- **`camera.fixed_framerate`** (prekidač u `gaze/config.yaml`, zadano `true`): dok program radi, postavlja `exposure_dynamic_framerate = 0`, a na izlazu vraća staru vrijednost. To je Linux-only i radi se izravno preko V4L2 ioctla (`gaze/v4l2.py`), jer OpenCV tu postavku ne nudi. Na drugim platformama se samo zapiše u log. Ako se proces sruši s `kill -9`, postavka ostaje do ponovnog spajanja kamere ili restarta, što je bezopasno.
+- Ako se kamera ne uspije otvoriti, postavka se i dalje vraća.
+
+**Mjerenje nakon popravka** (1280×720 MJPG, uz upaljeno svjetlo):
+
+| `fixed_framerate` | FPS | Najdulja pauza |
+| --- | --- | --- |
+| off | 29,9 | 40 ms |
+| on | 29,9 | 41 ms |
+
+Uz ovo svjetlo prekidač ne mijenja ništa. Razlika se očekuje navečer ili u tamnijoj sobi, što treba izmjeriti. Nakon oba pokretanja postavka kamere je vraćena na 1 (provjereno).
+
+**Testovi:** 4 nova testa s lažnom kamerom provjeravaju svježe slike, preskakanje kod spore obrade, istek čekanja i uredno zatvaranje kad kamera ne daje slike. Ukupno 68 testova prolazi.
+
+**Mjerenje u mraku** (Mateo, soba bez svjetla, 1280×720 MJPG):
+
+| `fixed_framerate` | FPS | Najdulja pauza |
+| --- | --- | --- |
+| off | 15,0 | 74 ms |
+| on | 29,9 | 39 ms |
+
+Potvrđeno je da kamera u mraku sama prepolovi FPS i da je prekidač to sprječava. Zato je `fixed_framerate: true` zadana vrijednost. Otvoreno pitanje je je li tamnija i zrnatija slika u mraku dovoljna za pouzdano prepoznavanje šarenice. To se provjerava u koraku 2.

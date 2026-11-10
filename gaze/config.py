@@ -17,6 +17,7 @@ class CameraConfig:
     height: int
     fps: int
     fourcc: str
+    fixed_framerate: bool
 
 
 @dataclass(frozen=True, slots=True)
