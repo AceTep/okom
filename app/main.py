@@ -6,16 +6,16 @@ python -m app.main
 from __future__ import annotations
 
 import logging
-import signal
 import time
 
-from app.backends.base import FocusBackend
+from app.backends.base import FocusBackend, FocusEvents
 from app.backends.detect import create_backend
 from app.config import load_config
 from app.decision import ScreenDecider
 from app.mapping import focus_candidates, screen_of_active
 from app.receiver import GazeReceiver
 from shared.protocol import GazeMessage
+from shared.signals import sigterm_as_keyboard_interrupt
 
 log = logging.getLogger("app.main")
 
@@ -45,6 +45,19 @@ def switch_to(backend: FocusBackend, screen_index: int, msg: GazeMessage) -> boo
     return False
 
 
+def follow_focus(events: FocusEvents, screen_index: dict[str, int], decider: ScreenDecider) -> None:
+    """Keep the decider in sync when focus moves by click, Alt+Tab or our own switch."""
+    name = events.poll()
+    if name is None:
+        return
+    screen = screen_index.get(name)
+    if screen is None:
+        log.warning("focus moved to unknown output %r (screens changed?)", name)
+        return
+    if decider.set_current(screen):
+        log.info("focus moved to screen %d outside OKOM", screen)
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -53,15 +66,22 @@ def main() -> None:
     receiver = GazeReceiver(config.udp.host, config.udp.port)  # fails fast if the port is taken
     backend = create_backend()
     # A plain `kill` should also restore the desktop (e.g. turn the dimming off again).
-    signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
+    sigterm_as_keyboard_interrupt()
+    events = None
     try:
         if config.highlight.dim_inactive and not backend.start_highlight():
             log.info("highlight is not available with the %s backend", backend.name)
         screens, windows = backend.snapshot()
+        screen_index = {s.name: s.index for s in screens}
         decider = ScreenDecider(config.decision, current=screen_of_active(screens, windows))
         log.info("focused screen at start: %s", decider.current)
+        events = backend.open_focus_events()
+        if events is None:
+            log.info("%s backend cannot report focus changes made outside OKOM", backend.name)
         receiving = False
         while True:
+            if events is not None:
+                follow_focus(events, screen_index, decider)
             msg = receiver.recv(timeout=_IDLE_TIMEOUT_S)
             if msg is None:
                 if receiving:
@@ -81,13 +101,11 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        if events is not None:
+            events.close()
         backend.stop_highlight()
         backend.close()
         receiver.close()
-
-
-def _raise_keyboard_interrupt(signum, frame) -> None:
-    raise KeyboardInterrupt
 
 
 if __name__ == "__main__":

@@ -31,7 +31,15 @@ from jeepney import (
 from jeepney.io.blocking import DBusConnection, open_dbus_connection
 from jeepney.low_level import MessageFlag
 
-from app.backends.base import CursorStream, FocusBackend, Rect, Screen, Window, index_screens
+from app.backends.base import (
+    CursorStream,
+    FocusBackend,
+    FocusEvents,
+    Rect,
+    Screen,
+    Window,
+    index_screens,
+)
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +51,7 @@ _HIGHLIGHT_EFFECT = "diminactive"
 _REPLY_PATH = "/okom"
 _REPLY_IFACE = "okom.Bridge"
 _CURSOR_PLUGIN = "okom_cursor"
+_FOCUS_PLUGIN = "okom_focus"
 
 # Runs inside KWin. Placeholders are filled with json.dumps() values.
 _LIST_JS = """
@@ -76,6 +85,15 @@ for (const w of workspace.stackingOrder) {
     }
 }
 callDBus(%(service)s, %(path)s, %(iface)s, "reply", %(token)s, JSON.stringify({ok: ok}));
+"""
+
+# Persistent: reports every change of the active window, with the output it is on.
+_FOCUS_EVENTS_JS = """
+function report(w) {
+    callDBus(%(service)s, %(path)s, %(iface)s, "activated",
+             w ? w.internalId.toString() : "", w && w.output ? w.output.name : "");
+}
+workspace.windowActivated.connect(report);
 """
 
 # Persistent: reports the cursor position at most every `interval` ms, and
@@ -156,6 +174,9 @@ class KdeWaylandBackend(FocusBackend):
     def open_cursor_stream(self, interval_ms: int = 33) -> CursorStream:
         return KdeCursorStream(interval_ms, self._timeout)
 
+    def open_focus_events(self) -> FocusEvents:
+        return KdeFocusEvents(self._timeout)
+
     def _run(self, template: str, params: dict[str, str]) -> dict:
         """Load a one-shot KWin script, run it and wait for its reply."""
         token = uuid.uuid4().hex
@@ -179,40 +200,40 @@ class KdeWaylandBackend(FocusBackend):
             log.debug("ignoring stale KWin reply %s", got_token)
 
 
-class KdeCursorStream(CursorStream):
-    """Cursor position pushed by a persistent KWin script.
+class _PersistentScript:
+    """A KWin script that stays loaded and pushes method calls to us.
 
-    Uses its own D-Bus connection so cursor messages never mix with replies
-    to one-shot scripts. A script left behind by a crashed run has a fixed
+    Uses its own D-Bus connection so its messages never mix with replies to
+    one-shot scripts. A script left behind by a crashed run has a fixed
     plugin name and is unloaded on the next start.
     """
 
-    def __init__(self, interval_ms: int, timeout: float) -> None:
+    def __init__(self, plugin: str, template: str, member: str, timeout: float, **params: str):
+        self._plugin = plugin
         self._timeout = timeout
         self._conn = open_dbus_connection(bus="SESSION")
         self._queue: deque[Message] = deque()
-        rule = MatchRule(type="method_call", interface=_REPLY_IFACE, member="cursor")
+        rule = MatchRule(type="method_call", interface=_REPLY_IFACE, member=member)
         self._filter = self._conn.filter(rule, queue=self._queue)
-        self._latest: tuple[int, int] | None = None
         self._unload()  # leftover from a crashed run, if any
-        source = _fill(_CURSOR_JS, self._conn, interval=str(int(interval_ms)))
+        source = _fill(template, self._conn, **params)
         # KWin reads the file during loadScript, so it can be removed right after.
         with _script_file(source) as path:
-            _load_and_run(self._conn, path, _CURSOR_PLUGIN, timeout)
-        log.info("cursor stream started (every %d ms while the mouse moves)", interval_ms)
+            _load_and_run(self._conn, path, plugin, timeout)
 
-    def latest(self) -> tuple[int, int] | None:
+    def drain(self) -> list[tuple]:
+        """Bodies of all calls received so far, oldest first. Never blocks."""
         while True:
             try:
                 self._conn.recv_messages(timeout=0)
             except TimeoutError:
                 break
+        bodies = []
         while self._queue:
             msg = self._queue.popleft()
             _ack(self._conn, msg)
-            x, y = msg.body
-            self._latest = (int(x), int(y))
-        return self._latest
+            bodies.append(msg.body)
+        return bodies
 
     def close(self) -> None:
         try:
@@ -222,7 +243,46 @@ class KdeCursorStream(CursorStream):
             self._conn.close()
 
     def _unload(self) -> None:
-        _call(self._conn, _SCRIPTING, "unloadScript", "s", (_CURSOR_PLUGIN,), self._timeout)
+        _call(self._conn, _SCRIPTING, "unloadScript", "s", (self._plugin,), self._timeout)
+
+
+class KdeCursorStream(CursorStream):
+    """Cursor position pushed by a persistent KWin script (for app.mock_gaze)."""
+
+    def __init__(self, interval_ms: int, timeout: float) -> None:
+        self._script = _PersistentScript(
+            _CURSOR_PLUGIN, _CURSOR_JS, "cursor", timeout, interval=str(int(interval_ms))
+        )
+        self._latest: tuple[int, int] | None = None
+        log.info("cursor stream started (every %d ms while the mouse moves)", interval_ms)
+
+    def latest(self) -> tuple[int, int] | None:
+        for x, y in self._script.drain():
+            self._latest = (int(x), int(y))
+        return self._latest
+
+    def close(self) -> None:
+        self._script.close()
+
+
+class KdeFocusEvents(FocusEvents):
+    """Active-window changes pushed by a persistent KWin script.
+
+    Covers every change: our own focus() calls, clicks, Alt+Tab, new windows.
+    """
+
+    def __init__(self, timeout: float) -> None:
+        self._script = _PersistentScript(_FOCUS_PLUGIN, _FOCUS_EVENTS_JS, "activated", timeout)
+
+    def poll(self) -> str | None:
+        changes = self._script.drain()
+        if not changes:
+            return None
+        _window_id, output = changes[-1]  # only the latest state matters
+        return output or None
+
+    def close(self) -> None:
+        self._script.close()
 
 
 def _fill(template: str, conn: DBusConnection, **params: str) -> str:

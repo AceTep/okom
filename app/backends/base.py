@@ -59,6 +59,18 @@ class CursorStream(ABC):
         """Stop the stream."""
 
 
+class FocusEvents(ABC):
+    """Tells the app when the active window changes, whoever changed it."""
+
+    @abstractmethod
+    def poll(self) -> str | None:
+        """Screen name of the newest active window since the last poll, or None. Never blocks."""
+
+    @abstractmethod
+    def close(self) -> None:
+        """Stop listening."""
+
+
 class FocusBackend(ABC):
     name: str = "base"
 
@@ -84,6 +96,10 @@ class FocusBackend(ABC):
 
     def stop_highlight(self) -> None:  # noqa: B027 - optional hook
         """Undo start_highlight(), leaving the desktop as it was before."""
+
+    def open_focus_events(self) -> FocusEvents | None:
+        """Active-window change events, or None if the platform cannot report them."""
+        return None
 
     def open_cursor_stream(self, interval_ms: int = 33) -> CursorStream | None:
         """Mouse position stream, or None if the platform does not support it."""

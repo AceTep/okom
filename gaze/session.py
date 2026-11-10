@@ -81,7 +81,11 @@ def run_session(cfg: GazeConfig, screens: list[int] | None = None) -> SessionRes
 
     recorder = _Recorder(cfg)
     recorder.start()
-    recorder.ready.wait(timeout=15.0)
+    try:
+        recorder.ready.wait(timeout=15.0)
+    except KeyboardInterrupt:  # stopped while the camera was starting: still clean up
+        recorder.stop()
+        raise
     if recorder.failed or not recorder.ready.is_set():
         recorder.stop()
         raise RuntimeError(f"camera did not start: {recorder.failed or 'timeout'}")

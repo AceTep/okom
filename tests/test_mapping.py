@@ -79,3 +79,29 @@ def test_switch_falls_back_to_next_window() -> None:
     backend = Backend()
     assert switch_to(backend, 1, msg) is True
     assert backend.tried == ["closing-dialog", "firefox"]
+
+
+def test_follow_focus_maps_output_to_screen() -> None:
+    from app.backends.base import FocusEvents
+    from app.config import DecisionConfig
+    from app.decision import ScreenDecider
+    from app.main import follow_focus
+
+    class Events(FocusEvents):
+        def __init__(self, names):
+            self.names = list(names)
+
+        def poll(self):
+            return self.names.pop(0) if self.names else None
+
+        def close(self):
+            pass
+
+    d = ScreenDecider(DecisionConfig(0.4, 0.8, 0.6, 0.5), current=0)
+    index = {s.name: s.index for s in SCREENS}
+    events = Events(["eDP-1", None, "DP-9"])
+    follow_focus(events, index, d)
+    assert d.current == 1
+    follow_focus(events, index, d)  # nothing new
+    follow_focus(events, index, d)  # unknown output: ignored
+    assert d.current == 1

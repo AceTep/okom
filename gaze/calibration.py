@@ -29,6 +29,7 @@ from gaze.config import GazeConfig
 from gaze.features import Face, Features, extract
 from gaze.session import SessionResult
 from gaze.targets import label_samples
+from shared.signals import sigterm_as_keyboard_interrupt
 
 log = logging.getLogger(__name__)
 
@@ -160,8 +161,13 @@ def main() -> None:
     if not re.fullmatch(r"[a-z0-9_-]{1,32}", args.condition):
         parser.error("condition: lowercase letters, digits, '_' or '-', at most 32 characters")
 
+    sigterm_as_keyboard_interrupt()  # Stop in the launcher must restore the camera too
     cfg = load_config()
-    result = run_session(cfg)
+    try:
+        result = run_session(cfg)
+    except KeyboardInterrupt:
+        log.error("aborted, nothing saved")
+        return
     if not result.completed:
         log.error("aborted, nothing saved")
         return

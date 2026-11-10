@@ -381,3 +381,26 @@ Zaključci:
 **Ideja za budućnost (Mateo):** zbog privatnosti bi dok OKOM radi samo on smio koristiti kameru, da nitko drugi ne može snimati korisnika sa strane. Tijekom razvoja to nije potrebno: sad se kamera namjerno dijeli s OBS-om preko `pw-v4l2`. U radu ide pod buduće značajke, kao prekidač u konfiguraciji.
 
 99 testova prolazi.
+
+### Dorade prebacivanja ekrana (prije Napretka I)
+
+**Aplikacija prati promjene fokusa izvana**
+- Dosad `app.main` nije znao kad korisnik sam klikne prozor na drugom ekranu ili napravi Alt+Tab. To je bilo poznato ograničenje iz koraka 3.
+- Sad stalno učitana KWin skripta (`okom_focus`) javlja svaku promjenu aktivnog prozora (`workspace.windowActivated`), zajedno s ekranom na kojem je prozor. `ScreenDecider.set_current()` time drži stanje u skladu sa stvarnošću. Dwell prema ekranu koji je upravo dobio fokus se odbacuje.
+- Kod za stalno učitane skripte (miš i fokus) spojen je u jednu klasu `_PersistentScript`: vlastita D-Bus veza, uklanjanje zaostale skripte nakon pada, potvrda primljenih poruka.
+- Provjereno na sustavu: fokus prebačen izvana tamo i natrag oba je puta prepoznat ("focus moved to screen 1/0 outside OKOM"). Obje skripte se na izlazu uklone, a miš za `mock_gaze` i dalje radi.
+- Ponašanje koje treba znati: ako korisnik klikne prozor na jednom ekranu, a dulje od dwella gleda drugi, fokus se vraća na ekran koji gleda. Upravo to aplikacija i treba raditi.
+
+**Čišći ispis**
+- MediaPipe pri učitavanju modela ispisuje pet bezopasnih C++ poruka (`Logging before InitGoogle`, `XNNPACK delegate`, `inference_feedback_manager`). Mjerenjem je utvrđeno da sve nastaju pri učitavanju, a nijedna tijekom obrade slika.
+- Zato se samo za vrijeme učitavanja C-razinski stderr (fd 2) preusmjerava u privremenu datoteku. Ako učitavanje ne uspije, uhvaćeni tekst se ispiše kao greška. Ispisuje se tek nakon što je fd 2 vraćen, jer bi inače i sama poruka o grešci završila u datoteci (greška uočena pri pregledu koda, prije pokretanja).
+- Prekidač `landmarks.quiet_native_logs` (zadano `true`).
+
+102 testa prolaze.
+
+### Uredno gašenje na SIGTERM i Ctrl+C
+
+Pronađeno pri planiranju launchera, koji programe zaustavlja signalom SIGTERM:
+- `gaze.main` i `gaze.calibration` na SIGTERM se nisu gasili uredno, pa postavka kamere nije bila vraćena. Sad SIGTERM radi isto što i Ctrl+C (`shared/signals.py`, zajedničko i za `app.main`).
+- **Pad Qt-a pri prekidu kalibracije signalom** (segmentation fault u 3 od 16 pokušaja, s nasumičnim trenutkom prekida). Uzrok: Python obradi signal između bilo koje dvije naredbe u glavnoj niti, dakle i usred `paintEvent`, a gašenje Qt-a odatle ruši Qt-ov Wayland kod. Popravak: obrada signala samo postavlja zastavicu, a stvarno gašenje radi tajmer od 16 ms, izvan crtanja. Nakon toga je bilo 0 padova u 30 pokušaja, a s kamerom 12 od 12 prekida u raznim trenucima bez pada i uz vraćenu postavku kamere.
+- Ako se kalibracija prekine dok se kamera još pokreće, nit kamere se sad uredno zaustavi prije izlaza.

@@ -15,6 +15,7 @@ landmarks:
   min_detection_confidence: 0.5
   min_presence_confidence: 0.5
   min_tracking_confidence: 0.5
+  quiet_native_logs: true         # hide MediaPipe's harmless C++ warnings while the model loads
 
 features:
   blink_threshold: 0.5            # eyeBlink blendshape at or above this = blinking

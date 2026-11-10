@@ -89,3 +89,14 @@ def test_unknown_start_switches_to_first_settled_screen() -> None:
 def test_switches_once_per_change() -> None:
     d = ScreenDecider(CFG, current=0)
     assert len(run(d, 0.0, 5.0, 1)) == 1
+
+
+def test_manual_focus_change_updates_current() -> None:
+    d = ScreenDecider(CFG, current=0)
+    assert run(d, 0.0, 0.3, 1) == []  # dwelling towards screen 1...
+    assert d.set_current(1) is True  # ...when the user clicks a window there
+    assert d.current == 1
+    assert run(d, 0.3, 2.0, 1) == []  # already there: no switch
+    assert d.set_current(1) is False  # no change, nothing to report
+    switches = run(d, 2.0, 3.0, 0)  # looking back at screen 0 still works
+    assert [s for _, s in switches] == [0]

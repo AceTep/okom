@@ -111,7 +111,7 @@ def run_overlay(
     should_stop: Callable[[], bool] = lambda: False,
 ) -> bool:
     """Show the timeline on all screens. Returns True if it ran to the end."""
-    state = {"aborted": False}
+    state = {"aborted": False, "stop_requested": False}
 
     def abort() -> None:
         state["aborted"] = True
@@ -128,6 +128,9 @@ def run_overlay(
     end = timeline[-1].end
 
     def tick() -> None:
+        if state["stop_requested"]:
+            abort()
+            return
         if should_stop():
             log.error("stopping the overlay: the capture thread reported a problem")
             abort()
@@ -144,12 +147,21 @@ def run_overlay(
     timer = QTimer()
     timer.timeout.connect(tick)
     timer.start(16)
-    # Qt's event loop blocks Python signal handling; let Ctrl+C abort cleanly.
-    previous = signal.signal(signal.SIGINT, lambda *_: abort())
+
+    # Ctrl+C and SIGTERM abort cleanly. The handler only sets a flag: Python runs
+    # it between any two bytecodes, also in the middle of paintEvent, and quitting
+    # Qt from there crashed Qt's Wayland code (measured: 3 of 16 runs). The timer
+    # tick, outside any painting, does the actual abort.
+    def request_stop(*_: object) -> None:
+        state["stop_requested"] = True
+
+    stop_signals = (signal.SIGINT, signal.SIGTERM)
+    previous = {sig: signal.signal(sig, request_stop) for sig in stop_signals}
     try:
         app.exec()
     finally:
-        signal.signal(signal.SIGINT, previous)
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
         timer.stop()
         for w in windows:
             w.close()

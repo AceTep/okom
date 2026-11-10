@@ -27,6 +27,7 @@ class LandmarksConfig:
     min_detection_confidence: float
     min_presence_confidence: float
     min_tracking_confidence: float
+    quiet_native_logs: bool
 
 
 @dataclass(frozen=True, slots=True)

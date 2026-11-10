@@ -21,6 +21,19 @@ class ScreenDecider:
     _last_usable: float | None = None
     _last_switch: float | None = None
 
+    def set_current(self, screen: int | None) -> bool:
+        """Focus moved to `screen` outside of this decider (click, Alt+Tab, our own switch).
+
+        Returns True if that changed what the decider believed. A dwell towards
+        the screen that now has focus is pointless, so it is dropped.
+        """
+        if screen == self.current:
+            return False
+        self.current = screen
+        if self._candidate == screen:
+            self._candidate = None
+        return True
+
     def usable(self, msg: GazeMessage) -> bool:
         """Blinks, lost faces, unsure screens and low confidence are skipped."""
         return (

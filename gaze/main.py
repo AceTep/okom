@@ -26,6 +26,7 @@ from gaze.models import ScreenPredictor, train_predictor
 from gaze.sender import GazeSender
 from gaze.smoothing import OneEuroFilter
 from shared.protocol import GazeMessage
+from shared.signals import sigterm_as_keyboard_interrupt
 
 log = logging.getLogger("gaze.main")
 
@@ -152,6 +153,7 @@ def main() -> None:
     which.add_argument("--recording", type=Path, help="calibration to train on (default: newest)")
     which.add_argument("--condition", help="newest calibration with this condition, e.g. normal")
     args = parser.parse_args()
+    sigterm_as_keyboard_interrupt()  # Stop in the launcher must restore the camera too
     cfg = load_config()
     run(cfg, make_predictor(cfg, args.recording, args.condition))
 

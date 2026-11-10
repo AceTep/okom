@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
+import sys
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import cv2
@@ -36,7 +41,20 @@ class LandmarkDetector:
             output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
         )
-        self._landmarker = vision.FaceLandmarker.create_from_options(options)
+        if cfg.quiet_native_logs:
+            with _captured_native_stderr() as output:
+                try:
+                    self._landmarker = vision.FaceLandmarker.create_from_options(options)
+                except Exception:
+                    output.failed = True
+                    raise
+            # fd 2 is restored here, so these messages reach the terminal
+            if output.failed:
+                log.error("MediaPipe output while loading:\n%s", output.text)
+            else:
+                log.debug("MediaPipe output while loading (hidden):\n%s", output.text)
+        else:
+            self._landmarker = vision.FaceLandmarker.create_from_options(options)
         self._last_ms = -1
 
     def detect(self, frame: Frame) -> list[Face]:
@@ -73,3 +91,31 @@ class LandmarkDetector:
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+
+class _Captured:
+    text = ""
+    failed = False
+
+
+@contextmanager
+def _captured_native_stderr() -> Iterator[_Captured]:
+    """Send C-level stderr (fd 2) to a temporary file while the block runs.
+
+    MediaPipe's C++ code prints a handful of harmless warnings while the model
+    loads. Python's sys.stderr is not involved, so the file descriptor itself
+    is redirected. The captured text is available after the block, when fd 2
+    is back to normal, so nothing logged afterwards is lost.
+    """
+    result = _Captured()
+    sys.stderr.flush()
+    saved = os.dup(2)
+    with tempfile.TemporaryFile() as tmp:
+        os.dup2(tmp.fileno(), 2)
+        try:
+            yield result
+        finally:
+            os.dup2(saved, 2)
+            os.close(saved)
+            tmp.seek(0)
+            result.text = tmp.read().decode(errors="replace").strip()

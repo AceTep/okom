@@ -57,3 +57,18 @@ def test_camera_without_frames_raises_and_releases() -> None:
     with pytest.raises(RuntimeError, match="no frames"):
         Camera(CFG, lambda _: fake, first_frame_timeout=0.2)
     assert fake.released.is_set()
+
+
+def test_native_stderr_capture_restores_fd() -> None:
+    import os
+
+    from gaze.landmarks import _captured_native_stderr
+
+    with _captured_native_stderr() as out:
+        os.write(2, b"native warning\n")
+    assert out.text == "native warning"
+    with pytest.raises(RuntimeError), _captured_native_stderr() as out:
+        os.write(2, b"before failure\n")
+        raise RuntimeError("boom")
+    assert out.text == "before failure"  # captured even when the block fails
+    os.write(2, b"")  # fd 2 is usable again
