@@ -17,12 +17,13 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from gaze.calibration import list_recordings, load
+from gaze.calibration import load
 from gaze.camera import Camera
 from gaze.config import GazeConfig, load_config
 from gaze.features import extract, is_blinking, primary_face
 from gaze.landmarks import LandmarkDetector
 from gaze.models import ScreenPredictor, train_predictor
+from gaze.selection import choose, read_recordings
 from gaze.sender import GazeSender
 from gaze.smoothing import OneEuroFilter
 from shared.logs import setup_logging
@@ -60,20 +61,31 @@ def build_message(
     )
 
 
+def _choose(condition: str | None) -> Path:
+    """Newest good calibration (see gaze/selection.py), with a clear message if none."""
+    recordings = read_recordings()
+    choice = choose(recordings, condition)
+    which = f"with condition {condition!r} " if condition else ""
+    if choice is None:
+        if any(condition in (None, r.condition) for r in recordings):
+            raise SystemExit(f"every calibration {which}is unusable, calibrate again")
+        raise SystemExit(
+            f"no calibration {which}yet, record one: "
+            f"python -m gaze.calibration --condition {condition or 'normal'}"
+        )
+    for r in choice.skipped:
+        log.warning("not using %s: rated %s", r.path.name, r.verdict)
+    if choice.weak:
+        name = choice.recording.path.name
+        log.warning("only weak calibrations %sexist, using %s anyway", which, name)
+    return choice.recording.path
+
+
 def make_predictor(
     cfg: GazeConfig, recording_path: Path | None, condition: str | None = None
 ) -> ScreenPredictor:
     if recording_path is None:
-        recordings = list_recordings()
-        if condition is not None:
-            recordings = [r for r in recordings if r.name.endswith(f"_{condition}")]
-        if not recordings:
-            which = f"with condition {condition!r} " if condition else ""
-            raise SystemExit(
-                f"no calibration {which}yet, record one: "
-                f"python -m gaze.calibration --condition {condition or 'normal'}"
-            )
-        recording_path = recordings[-1]
+        recording_path = _choose(condition)
     rec = load(recording_path)
     m = cfg.model
     try:

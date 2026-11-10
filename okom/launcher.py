@@ -41,17 +41,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gaze.selection import read_recordings
 from okom.commands import (
     MODEL_FILE,
     QUALITY_COLOR,
     REPO_ROOT,
     Command,
+    any_calibration,
     calibrate_command,
     can_share_camera,
+    chosen_calibration,
     describe_age,
     describe_quality,
     known_conditions,
-    latest_calibration,
     start_commands,
 )
 from shared.logs import LOG_DIR, setup_logging
@@ -242,9 +244,13 @@ class Launcher(QWidget):
 
     def refresh(self) -> None:
         condition = self.condition.currentText()
-        self.calibration = latest_calibration(condition) if condition else None
+        self.calibration = chosen_calibration(condition) if condition else None
         if not condition:
             self.calibration_label.setText(f"{BAD} enter a condition")
+        elif self.calibration is None and any_calibration(condition):
+            self.calibration_label.setText(
+                f"{BAD} every calibration for “{condition}” is unusable, calibrate again"
+            )
         elif self.calibration is None:
             self.calibration_label.setText(f"{BAD} none for “{condition}”, calibrate first")
         else:
@@ -254,6 +260,10 @@ class Launcher(QWidget):
                 note = f"<br>⚠ recorded with screens {', '.join(c.screens)}, calibrate again"
             if c.quality and c.quality.get("verdict") != "good":
                 note += f"<br>{c.quality.get('message', '')}"
+            if c.only_weak:
+                note += "<br>only weak calibrations for this condition"
+            for started, verdict in c.skipped:
+                note += f"<br>newer one from {describe_age(started)} is {verdict}, not used"
             quality, color = describe_quality(c.quality)
             if color:
                 quality = f"<span style='color:{color}'>{quality}</span>"
@@ -284,7 +294,7 @@ class Launcher(QWidget):
     # ---- processes --------------------------------------------------------
 
     def calibrate(self) -> None:
-        self._calibration_before = self.calibration.path if self.calibration else None
+        self._calibration_before = self._newest_recording()
         self._mode = "calibrating"
         self._run(calibrate_command(self.condition.currentText(), self.share_camera.isChecked()))
         self.refresh()
@@ -296,7 +306,7 @@ class Launcher(QWidget):
         if self._mode != "idle" or not self.start_btn.isEnabled():
             return
         self._mode = "running"
-        for cmd in start_commands(self.condition.currentText(), self.share_camera.isChecked()):
+        for cmd in start_commands(self.calibration.path, self.share_camera.isChecked()):
             self._run(cmd)
         self.refresh()
 
@@ -369,24 +379,38 @@ class Launcher(QWidget):
         self.condition.setCurrentText(current)
         self.condition.blockSignals(False)
 
+    def _newest_recording(self):
+        condition = self.condition.currentText()
+        mine = [r for r in read_recordings() if r.condition == condition]
+        return mine[-1] if mine else None
+
     def _report_calibration(self) -> None:
-        """Tell the user right away whether the calibration just made is any good."""
-        c = self.calibration
-        if c is None or c.path == self._calibration_before:
+        """Tell the user right away whether the calibration just made is any good.
+
+        Looks at the newest recording, not the chosen one: a weak new calibration
+        leaves an older good one in use, and the user must still hear about it.
+        """
+        new = self._newest_recording()
+        before = self._calibration_before
+        if new is None or (before is not None and new.path == before.path):
             self.status.setText("Calibration aborted, nothing saved.")
             return
-        if c.quality is None:
+        quality = new.meta.get("quality")
+        if quality is None:
             self.status.setText("Calibration saved.")
             return
-        verdict = c.quality.get("verdict")
+        verdict = quality.get("verdict")
         color = QUALITY_COLOR.get(verdict, "")
         text = {
             "good": "Calibration saved and good",
             "weak": "Calibration saved but weak",
             "unusable": "Calibration not usable",
         }.get(verdict, "Calibration saved")
+        kept = ""
+        if verdict != "good" and self.calibration and self.calibration.path != new.path:
+            kept = f" Still using the one from {describe_age(self.calibration.started)}."
         self.status.setText(
-            f"<span style='color:{color}'>{text}: {c.quality.get('message', '')}</span>"
+            f"<span style='color:{color}'>{text}: {quality.get('message', '')}{kept}</span>"
         )
         if verdict != "good":
             self.show_window()

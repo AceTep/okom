@@ -28,14 +28,14 @@ import numpy as np
 
 from gaze.config import GazeConfig
 from gaze.features import Face, Features, extract
+from gaze.selection import CALIBRATION_DIR, pick_prior, read_recordings
 from gaze.session import SessionResult
 from shared.logs import setup_logging
 from shared.signals import sigterm_as_keyboard_interrupt
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = REPO_ROOT / "data" / "calibration"
+DATA_DIR = CALIBRATION_DIR  # one definition, in gaze/selection.py
 FORMAT_VERSION = 1
 
 
@@ -194,34 +194,18 @@ def prior_model(cfg: GazeConfig, condition: str, data_dir: Path = DATA_DIR):
     from gaze.overlay import ordered_qt_screens
 
     QApplication.instance() or QApplication(sys.argv)
-    path = pick_prior(
-        list_recordings(data_dir), [s.name() for s in ordered_qt_screens()], condition
-    )
-    if path is None:
+    screens = [s.name() for s in ordered_qt_screens()]
+    prior = pick_prior(read_recordings(data_dir), screens, condition)
+    if prior is None:
         log.info("no earlier good calibration with these screens: wrong-screen check off")
         return None
+    path = prior.path
     m = cfg.model
     predictor, _ = train_predictor(
         load(path), m.kind, m.feature_set, cfg.features.blink_threshold, m.softness_deg
     )
     log.info("wrong-screen check uses %s", path.name)
     return predictor.predict
-
-
-def pick_prior(paths: list[Path], screens: list[str], condition: str) -> Path | None:
-    """Newest recording rated good and made with these screens; same condition first."""
-    same, other = [], []
-    for path in reversed(paths):  # newest first
-        try:
-            meta = json.loads((path / "meta.json").read_text())
-        except (OSError, ValueError):
-            continue
-        if meta.get("quality", {}).get("verdict") != "good":
-            continue
-        if [s["name"] for s in meta.get("screens", [])] != screens:
-            continue
-        (same if meta.get("condition") == condition else other).append(path)
-    return (same or other or [None])[0]
 
 
 def record_quality(path: Path, cfg: GazeConfig):

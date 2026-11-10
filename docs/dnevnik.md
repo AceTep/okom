@@ -517,3 +517,26 @@ Treće snimanje je primjetno slabije od prvog u istim uvjetima: donji red monito
 - Unaprijed zadani uvjeti su u `okom/commands.py` (`PRESET_CONDITIONS`).
 
 123 testa prolaze.
+
+### Koja se kalibracija koristi
+
+**Prijedlog (Mateo):** ako je nova kalibracija lošija od prošle, ne uzimati je.
+
+**Odluka:** slaba i neupotrebljiva kalibracija se ne uzima, ali starija se ne bira samo zato što ima višu ocjenu:
+- Ocjena mjeri koliko se kalibracija slaže **sama sa sobom** (leave-one-point-out na vlastitim podacima). Ocjene različitih snimanja zato se ne mogu pošteno uspoređivati.
+- Najnovija kalibracija najbolje odražava **sadašnje** svjetlo i držanje.
+- Poštena usporedba bila bi provjera svih kalibracija na istim novim podacima (brza provjera s 5 točaka, plan za Fazu 2).
+
+**Pravilo** (`gaze/selection.py`, jedno mjesto za `gaze.main`, launcher i provjeru krivog ekrana):
+1. najnovija kalibracija ocijenjena kao **good** (snimanja iz vremena prije ocjenjivanja računaju se kao dobra);
+2. ako za uvjet postoje samo slabe, uzima se najnovija slaba, uz upozorenje;
+3. neupotrebljiva se nikad ne uzima.
+- Modul čita samo `meta.json` (bez numpyja, kamere i MediaPipea), pa ga launcher koristi bez učitavanja gaze enginea.
+- **Launcher predaje točnu kalibraciju** `gaze.main` preko `--recording`, pa se pokreće upravo ona koja je prikazana u prozoru. Uz nju piše i koje su novije preskočene i zašto ("newer one from today 22:24 is weak, not used").
+- Poruka nakon kalibracije gleda **najnovije** snimanje, a ne odabrano. Bez toga bi slaba nova kalibracija (uz stariju dobru) bila prijavljena kao "aborted". Ovo je uočeno pri pregledu koda, prije pokretanja.
+
+**Provjereno na stvarnim podacima:** snimanje `20261110-222408_normal` (Mateo, pri isprobavanju) ocijenjeno je kao slabo (91,8 %). `gaze.main --condition normal` ga je preskočio ("not using … rated weak") i uzeo `20261110-215841_normal`. Launcher je prikazao isto i pokrenuo `gaze.main --recording …215841_normal`.
+
+**Za kasnije (u planu rada):** profili za korisnički test (`P01` + uvjet) s odabirom određenog snimanja u GUI-ju, te brza provjera s 5 točaka koja pošteno uspoređuje kalibracije.
+
+131 test prolazi.

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import sys
@@ -10,8 +9,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from gaze.selection import CALIBRATION_DIR, choose, read_recordings
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CALIBRATION_DIR = REPO_ROOT / "data" / "calibration"
 MODEL_FILE = REPO_ROOT / "models" / "face_landmarker.task"
 CONDITION_RE = re.compile(r"[a-z0-9_-]{1,32}")
 # Offered in the launcher; any other label can still be typed (e.g. "classroom").
@@ -39,10 +39,13 @@ def calibrate_command(condition: str, share_camera: bool) -> Command:
     )
 
 
-def start_commands(condition: str, share_camera: bool) -> list[Command]:
+def start_commands(recording: Path, share_camera: bool) -> list[Command]:
+    """The exact recording shown in the launcher is the one gaze.main trains on."""
     return [
         python_module("app", "app.main"),
-        python_module("gaze", "gaze.main", "--condition", condition, share_camera=share_camera),
+        python_module(
+            "gaze", "gaze.main", "--recording", str(recording), share_camera=share_camera
+        ),
     ]
 
 
@@ -58,31 +61,41 @@ class CalibrationInfo:
     samples_with_face: int
     screens: list[str]
     quality: dict | None  # gaze.models.Quality.as_dict(), None for old recordings
+    only_weak: bool = False  # chosen although weak: nothing better for this condition
+    skipped: tuple[tuple[float, str], ...] = ()  # newer recordings not used: (started, verdict)
 
     @property
     def usable(self) -> bool:
         return self.quality is None or self.quality.get("verdict") != "unusable"
 
 
-def latest_calibration(condition: str, data_dir: Path = CALIBRATION_DIR) -> CalibrationInfo | None:
-    """Newest recording with this condition, or None. Unreadable recordings are skipped."""
-    if not data_dir.exists():
+def _unix(started: str) -> float:
+    return time.mktime(time.strptime(started, "%Y-%m-%dT%H:%M:%S"))
+
+
+def chosen_calibration(condition: str, data_dir: Path = CALIBRATION_DIR) -> CalibrationInfo | None:
+    """The calibration Start will use (rule in gaze/selection.py), or None."""
+    choice = choose(read_recordings(data_dir), condition)
+    if choice is None:
         return None
-    for path in sorted(data_dir.glob(f"*_{condition}"), reverse=True):
-        try:
-            meta = json.loads((path / "meta.json").read_text())
-            started = time.mktime(time.strptime(meta["started"], "%Y-%m-%dT%H:%M:%S"))
-            return CalibrationInfo(
-                path=path,
-                condition=meta["condition"],
-                started=started,
-                samples_with_face=int(meta["samples_with_face"]),
-                screens=[s["name"] for s in meta["screens"]],
-                quality=meta.get("quality"),
-            )
-        except (OSError, KeyError, ValueError):
-            continue
-    return None
+    r = choice.recording
+    try:
+        return CalibrationInfo(
+            path=r.path,
+            condition=r.condition,
+            started=_unix(r.started),
+            samples_with_face=int(r.meta["samples_with_face"]),
+            screens=r.screens,
+            quality=r.meta.get("quality"),
+            only_weak=choice.weak,
+            skipped=tuple((_unix(x.started), x.verdict or "?") for x in choice.skipped),
+        )
+    except (KeyError, ValueError):
+        return None
+
+
+def any_calibration(condition: str, data_dir: Path = CALIBRATION_DIR) -> bool:
+    return any(r.condition == condition for r in read_recordings(data_dir))
 
 
 def describe_age(started: float, now: float | None = None) -> str:
