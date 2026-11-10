@@ -256,3 +256,75 @@ Zaključci:
 - Razlike prosjeka: pitch −21,9° naspram −5,8° (16°), iris_v −0,10 naspram −0,04.
 - d′ je pao na 2,1–2,5 (prije 7,7). To nije pogoršanje: točke sad pokrivaju cijeli ekran, pa je raspršenje unutar jednog ekrana veliko (vrh i dno istog ekrana). d′ preko cijelog ekrana zato ne predviđa točnost. Ono što odlučuje je preklapanje donjeg reda monitora i gornjeg reda laptopa, a to mjeri model u koraku 3b.
 - Ponovno se vidi naginjanje prema laptopu (eye_distance_px 98 → 109, head_z −39,8 → −37,6 cm). Kod ovog korisnika je dosljedno, ali je to navika, a ne pogled.
+
+### Gaze engine, korak 3b: kalibracija i model za ekran
+
+**Što se sprema** (`gaze/calibration.py`, `python -m gaze.calibration --condition normal`)
+- Jedno snimanje je jedna mapa u `data/calibration/<datum-vrijeme>_<uvjet>/` s dvije datoteke:
+  - `meta.json`: uvjet, ekrani, korištena konfiguracija, broj uzoraka
+  - `samples.npz`: po označenom uzorku cilj (ekran, x, y, broj točke) i sirovi izlaz MediaPipea (478 točaka, blendshapeovi, matrica glave)
+- **Odluka: slike se ne spremaju, ali sprema se više od samih značajki.**
+  - Slike nisu potrebne za model, a slike lica su osobni podaci, što je posebno važno kod korisničkog testa.
+  - Sirove točke lica omogućuju ponovni izračun bilo koje značajke bez novog snimanja, a lice se iz njih ne može rekonstruirati kao slika.
+  - Veličina: ~2 MB po punom snimanju (izmjereno 142 KB za skraćeno od 120 uzoraka), naspram ~50 MB sa slikama.
+- Postojeće snimanje se nikad ne prepisuje. Oznaka uvjeta smije sadržavati samo mala slova, brojke, `_` i `-`.
+
+**Modeli** (`gaze/models.py`)
+- `threshold(pitch)`: jedan prag na nagibu glave. To je najjednostavnija osnova, za usporedbu s ML-om.
+- `logreg`: logistička regresija na standardiziranim značajkama (nova ovisnost: `scikit-learn`).
+- Skupovi značajki:
+  - `head`: pitch, yaw, roll
+  - `eyes`: iris h i v za oba oka
+  - `head+eyes`
+  - `head+eyes+posture`: plus head_x, head_y, head_z i eye_distance_px. To su značajke koje ovise o tome kako korisnik sjedi.
+
+**Pošteno mjerenje točnosti** (`python -m eval.screen_accuracy`)
+- Uzastopne slike s iste točke gotovo su jednake. Nasumična podjela na učenje i test zato bi "procurila" i napuhala točnost.
+- Zato se drži van **cijela točka**: model se uči na svim ostalim točkama i testira na izostavljenoj (leave-one-point-out), i tako za svaku od 30 točaka.
+- Ispis daje točnost za svaki model i skup značajki, a za najbolji i točnost po redu točaka. Tako se vidi koliko se griješi blizu ruba između ekrana.
+- S dva ili više snimanja dodatno se uči na jednom i testira na drugom (npr. `normal` → `naocale`).
+- Točnost je po slici s kamere, prije dwella i histereze u `app/`. Stvarnih krivih prebacivanja fokusa bit će manje.
+- Snimanje koje se ne može pošteno izmjeriti odbija se s jasnom porukom, umjesto da se program sruši. To je slučaj kad neki ekran nema lice na barem dvije točke. Ako više od 20 % uzoraka nema lice, ispisuje se upozorenje.
+
+**Proba:** skraćeno snimanje (2×2 točke) pokrenuto bez najave, dok korisnik nije gledao, imalo je lice na samo 41 od 120 uzoraka, i to samo na jednom ekranu. To je otkrilo pad u mjerenju kad za neki ekran nema podataka, pa je dodana provjera iznad. Snimanje je spremljeno u privremenu mapu, ne u `data/`.
+
+`Sample` iz `gaze/session.py` sad čuva sirovo lice (`Face`) umjesto izračunatih značajki, da se pri spremanju ništa ne izgubi.
+
+92 testa prolaze.
+
+**Prvi broj točnosti** (Mateo, uvjet `normal`, bez naočala, 10.11.2026. 20:47)
+- Snimanje `20261110-204709_normal`: 539 uzoraka, svi s licem. 10 treptaja je preskočeno, 529 je korišteno.
+- Točnost po slici, leave-one-point-out:
+
+| Model | Značajke | Točnost |
+| --- | --- | --- |
+| prag | pitch | 99,6 % |
+| logreg | head | **99,8 %** |
+| logreg | eyes | 97,2 % |
+| logreg | head+eyes | 98,9 % |
+| logreg | head+eyes+posture | 99,6 % |
+
+- Po redovima točaka (logreg head): svi redovi imaju 100 %, osim donjeg reda monitora (98,9 %, 1 greška od 90). Kao što se očekivalo, griješi se samo uz rub između ekrana.
+- Zaključci:
+  - Za ovog korisnika u ovim uvjetima i **jedan prag na nagibu glave** razlikuje ekrane skoro savršeno. U skladu s pravilom "jednostavno ima prednost" to je ozbiljan kandidat za demo.
+  - Oči same daju 97 %, što znači da se i korisnik koji manje pomiče glavu može dobro razlikovati. Dodavanje očiju glavi ovdje malo smanjuje točnost (98,9 % naspram 99,8 %), jer je šarenica šumovitija od poze glave.
+  - **Oprez:** ovo je jedan korisnik, jedno snimanje i isti uvjeti za učenje i test. Ovaj korisnik pomiče glavu za 13–16°. Pravu sliku robusnosti dat će snimanja u drugim uvjetima (naočale, prigušeno svjetlo, drukčije držanje, drugi dan) i uz druge ljude. Izbor između praga i logreg-a ostavlja se za taj trenutak.
+  - Točnost je po slici. U `app/` odluku donosi tek pogled koji traje 0,4 s, pa se pojedinačna kriva slika ne pretvara u krivo prebacivanje.
+
+**Naočale kao uvjet** (Mateo, nedioptrijske naočale, 20:50, isto držanje)
+- Snimanje `20261110-205000_naocale`: 540 uzoraka, svi s licem, 3 treptaja preskočena.
+
+| Model | Značajke | naočale (LOPO) | normal → naočale | naočale → normal |
+| --- | --- | --- | --- | --- |
+| prag | pitch | 99,8 % | **99,8 %** | **99,8 %** |
+| logreg | head | 100,0 % | 98,7 % | 100,0 % |
+| logreg | eyes | 89,4 % | **76,9 %** | 88,7 % |
+| logreg | head+eyes | 98,5 % | 96,3 % | 98,9 % |
+| logreg | head+eyes+posture | 99,6 % | 96,6 % | 98,9 % |
+
+Zaključci:
+- **Značajke očiju su osjetljive na naočale.** Unutar snimanja s naočalama padaju sa 97,2 % na 89,4 %. Kad se model nauči bez naočala, a testira s njima, padaju na **76,9 %**. Vjerojatno okvir i odsjaji pomiču točke šarenice ili kutova oka koje MediaPipe pronalazi. Ovo je nalaz za dio rada o robusnosti.
+- **Poza glave je robusna.** Prag na pitchu drži 99,8 % u oba smjera, a izgleda da je **najrobusniji od svih**. logreg na glavi gubi malo pri prijelazu bez naočala → s naočalama (98,7 %), vjerojatno zato što koristi i yaw i roll, koji se između snimanja malo pomaknu.
+- Dodavanje očiju glavi pri prijelazu između uvjeta šteti (96,3 % naspram 98,7 % i 99,8 %).
+- **Odluka za demo (spajanje 1):** zadani model je **prag na pitchu**. Najjednostavniji je, determinističan i najrobusniji na izmjerenim podacima. logreg ostaje kao opcija u configu.
+- **Oprez:** dva snimanja iste večeri, jedan korisnik koji puno pomiče glavu. Za korisnika koji pomiče samo oči prag na glavi bi bio lošiji, a upravo su oči osjetljive na naočale. To treba provjeriti na korisničkom testu.

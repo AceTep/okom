@@ -27,7 +27,8 @@ Dok gaze engine nije gotov, `app/mock_gaze.py` šalje iste poruke, a pogled glum
 | Odluka o prebacivanju između ekrana + lažni pogled mišem | gotovo, ručno isprobano |
 | Kamera, značajke lica (poza glave, šarenica) | gotovo |
 | Vodič preko cijelog ekrana (točke za kalibraciju) | gotovo |
-| Kalibracija i model za ekran | u izradi |
+| Kalibracija, model za ekran, mjerenje točnosti | gotovo, čeka prvo pravo snimanje |
+| Slanje pogleda aplikaciji (`gaze/main.py`) | nije počelo |
 | Windows, Hyprland, Sway, GNOME | nije počelo |
 
 Detaljan zapis odluka i mjerenja je u [`docs/dnevnik.md`](docs/dnevnik.md).
@@ -55,6 +56,13 @@ python -m app.mock_gaze   # lažni pogled
 ```
 
 Pomakni miš na drugi ekran i zadrži ga tamo oko pola sekunde. Fokus prelazi na gornji prozor na tom ekranu.
+
+**Kalibracija i točnost:**
+
+```bash
+python -m gaze.calibration --condition normal   # prati točku, snimanje ide u data/calibration/
+python -m eval.screen_accuracy                  # točnost na svim snimanjima
+```
 
 **Provjere:**
 

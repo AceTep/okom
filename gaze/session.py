@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 from gaze.camera import Camera
 from gaze.config import GazeConfig
-from gaze.features import Features, extract, primary_face
+from gaze.features import Face, primary_face
 from gaze.landmarks import LandmarkDetector
 from gaze.targets import Step, build_timeline
 
@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 @dataclass(frozen=True, slots=True)
 class Sample:
     t: float  # capture time of the frame
-    features: Features | None  # None when no face was found
+    face: Face | None  # raw landmarks of the primary face, None when no face was found
     users: int  # faces in the frame
 
 
@@ -52,9 +52,7 @@ class _Recorder(threading.Thread):
                     if frame is None:
                         continue
                     faces = det.detect(frame)
-                    face = primary_face(faces)
-                    f = extract(face) if face is not None else None
-                    self.samples.append(Sample(frame.t, f, len(faces)))
+                    self.samples.append(Sample(frame.t, primary_face(faces), len(faces)))
         except Exception as exc:  # reported to the UI, which then stops
             log.exception("recorder failed")
             self.failed = str(exc)

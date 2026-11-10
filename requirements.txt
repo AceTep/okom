@@ -13,6 +13,9 @@ mediapipe>=0.10.14
 # Python 3.11 after a few seconds of painting (measured, see docs/dnevnik.md).
 PySide6-Essentials==6.11.3
 
+# Screen classifier (logistic regression) and its evaluation
+scikit-learn>=1.5
+
 # Development
 pytest>=8.0
 ruff>=0.6

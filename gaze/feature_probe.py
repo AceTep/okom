@@ -72,12 +72,14 @@ def compare(cfg: GazeConfig) -> None:
     by_screen: dict[int, list[np.ndarray]] = {}
     no_face = blinks = 0
     for target, sample in labelled:
-        if sample.features is None:
+        if sample.face is None:
             no_face += 1
-        elif is_blinking(sample.features, cfg.features.blink_threshold):
+            continue
+        f = extract(sample.face)
+        if is_blinking(f, cfg.features.blink_threshold):
             blinks += 1
         else:
-            by_screen.setdefault(target.screen, []).append(sample.features.vector())
+            by_screen.setdefault(target.screen, []).append(f.vector())
     log.info(
         "%d labelled samples, %d without a face, %d blinking (both skipped)",
         len(labelled), no_face, blinks,
