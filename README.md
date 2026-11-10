@@ -29,6 +29,7 @@ Dok gaze engine nije gotov, `app/mock_gaze.py` šalje iste poruke, a pogled glum
 | Vodič preko cijelog ekrana (točke za kalibraciju) | gotovo |
 | Kalibracija, model za ekran, mjerenje točnosti | gotovo (99,8 % po slici, i s naočalama) |
 | Prebacivanje ekrana pogledom, kamera → aplikacija (`gaze/main.py`) | gotovo |
+| Launcher (`python -m okom`): kalibracija, start/stop, traka sustava | gotovo |
 | Prebacivanje po prozorima (točka pogleda) | nije počelo |
 | Windows, Hyprland, Sway, GNOME | nije počelo |
 
@@ -49,7 +50,15 @@ python scripts/download_models.py  # MediaPipe model u models/
 
 Okruženje mora biti aktivno (`source .venv/bin/activate`) u svakom terminalu.
 
-**Prebacivanje ekrana pogledom**: prvo jednom kalibracija, zatim dva terminala:
+**Najlakše, preko launchera:**
+
+```bash
+python -m okom
+```
+
+Otvara se prozor sa stanjem (ekrani, backend, model, kalibracija) i gumbima **Calibrate**, **Start / Stop** i **Hide to tray**. Kvačica **Share camera (OBS)** dijeli kameru s OBS-om. Launcher samo pokreće programe ispod, pa sve radi i iz terminala:
+
+**Prebacivanje ekrana pogledom iz terminala**: prvo jednom kalibracija, zatim dva terminala:
 
 ```bash
 python -m gaze.calibration --condition normal   # jednom: prati točku po oba ekrana

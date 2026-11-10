@@ -404,3 +404,25 @@ Pronađeno pri planiranju launchera, koji programe zaustavlja signalom SIGTERM:
 - `gaze.main` i `gaze.calibration` na SIGTERM se nisu gasili uredno, pa postavka kamere nije bila vraćena. Sad SIGTERM radi isto što i Ctrl+C (`shared/signals.py`, zajedničko i za `app.main`).
 - **Pad Qt-a pri prekidu kalibracije signalom** (segmentation fault u 3 od 16 pokušaja, s nasumičnim trenutkom prekida). Uzrok: Python obradi signal između bilo koje dvije naredbe u glavnoj niti, dakle i usred `paintEvent`, a gašenje Qt-a odatle ruši Qt-ov Wayland kod. Popravak: obrada signala samo postavlja zastavicu, a stvarno gašenje radi tajmer od 16 ms, izvan crtanja. Nakon toga je bilo 0 padova u 30 pokušaja, a s kamerom 12 od 12 prekida u raznim trenucima bez pada i uz vraćenu postavku kamere.
 - Ako se kalibracija prekine dok se kamera još pokreće, nit kamere se sad uredno zaustavi prije izlaza.
+
+### Launcher: jedan prozor za kalibraciju i pokretanje (`python -m okom`)
+
+**Zašto:** dosad su trebala dva terminala i tri naredbe. Na novom računalu (npr. u učionici) ili za sudionika korisničkog testa to je nepraktično, a lako pokretanje je i samo po sebi tema komunikacije čovjeka i stroja. Ideja je Mateova.
+
+**Kako radi**
+- Mali prozor (PySide6, tekst na engleskom kao i vodič) prikazuje stanje: ekrane u protokolnom redoslijedu, backend za fokus, je li MediaPipe model preuzet i zadnju kalibraciju za upisani uvjet. Ako je kalibracija snimljena s drukčijim ekranima, prikazuje se upozorenje.
+- Gumbi: **Calibrate** (vodič s točkama), **Start / Stop**, **Hide to tray** (ikona u traci sustava s izbornikom Show / Start / Quit). Kvačica **Share camera (OBS)** pokreće kameru kroz `pw-v4l2`.
+- **Launcher samo pokreće postojeće programe** (`app.main`, `gaze.main`, `gaze.calibration`) kao zasebne procese, preko `QProcess`. Arhitektura s dva procesa i UDP-om ostaje ista, a svaki program i dalje radi i sam iz terminala.
+- Gumbi su onemogućeni kad nemaju smisla: Start bez kalibracije, Calibrate dok program radi, jer oba trebaju kameru.
+- **Stop** šalje SIGTERM, a nakon 5 s SIGKILL ako proces još radi. Ako se jedan od dva programa sam ugasi, launcher zaustavi i drugog, prikaže grešku i otvori log. Zatvaranje prozora zaustavlja sve i gasi launcher.
+- Logovi oba procesa vide se u skrivenom prikazu "Show log" (zadnjih 1000 redaka, s oznakom `[app]` / `[gaze]` / `[calibration]`).
+- Logika bez Qt-a (naredbe, zadnja kalibracija po uvjetu, opis starosti) je u `okom/commands.py` i ima testove.
+
+Za uredno zaustavljanje launcher se oslanja na gašenje na SIGTERM (odjeljak iznad).
+
+**Provjereno (launcher upravljan iz skripte, slike prozora pregledane):**
+- Start pokreće oba procesa i uključuje zatamnjenje.
+- Stop ih gasi, isključuje zatamnjenje i vraća postavku kamere.
+- Calibrate s uvjetom bez snimanja: Start je onemogućen. Prekinuta kalibracija ništa ne sprema i vraća launcher u stanje mirovanja.
+
+105 testova prolazi.
