@@ -56,3 +56,20 @@ def test_describe_age() -> None:
     today = now - 3600
     assert describe_age(today, now) == "today 20:00"
     assert describe_age(now - 2 * 86400, now) == "08.11. 21:00 (2 days ago)"
+
+
+def test_quality_in_calibration_info(tmp_path) -> None:
+    from okom.commands import describe_quality
+
+    write_recording(tmp_path, "20261110-204709_normal", "2026-11-10T20:47:09", "normal")
+    info = latest_calibration("normal", tmp_path)
+    assert info.quality is None and info.usable  # old recording: not measured, still usable
+    meta_path = info.path / "meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta["quality"] = {"verdict": "unusable", "accuracy": None, "message": "no face"}
+    meta_path.write_text(json.dumps(meta))
+    info = latest_calibration("normal", tmp_path)
+    assert not info.usable
+    assert describe_quality(info.quality) == ("unusable", "#d33")
+    assert describe_quality({"verdict": "good", "accuracy": 0.996})[0] == "quality 99.6 %"
+    assert describe_quality(None) == ("quality not measured", "")

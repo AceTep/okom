@@ -43,6 +43,8 @@ class CalibrationConfig:
     countdown_s: float
     settle_s: float
     record_s: float
+    face_warning_s: float
+    good_accuracy: float
 
 
 @dataclass(frozen=True, slots=True)

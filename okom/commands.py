@@ -55,6 +55,11 @@ class CalibrationInfo:
     started: float  # Unix time
     samples_with_face: int
     screens: list[str]
+    quality: dict | None  # gaze.models.Quality.as_dict(), None for old recordings
+
+    @property
+    def usable(self) -> bool:
+        return self.quality is None or self.quality.get("verdict") != "unusable"
 
 
 def latest_calibration(condition: str, data_dir: Path = CALIBRATION_DIR) -> CalibrationInfo | None:
@@ -71,6 +76,7 @@ def latest_calibration(condition: str, data_dir: Path = CALIBRATION_DIR) -> Cali
                 started=started,
                 samples_with_face=int(meta["samples_with_face"]),
                 screens=[s["name"] for s in meta["screens"]],
+                quality=meta.get("quality"),
             )
         except (OSError, KeyError, ValueError):
             continue
@@ -86,3 +92,16 @@ def describe_age(started: float, now: float | None = None) -> str:
     days = max(1, round((now - started) / 86400))
     when = time.strftime("%d.%m. %H:%M", time.localtime(started))
     return f"{when} ({days} day{'s' if days != 1 else ''} ago)"
+
+
+QUALITY_COLOR = {"good": "#2a2", "weak": "#c80", "unusable": "#d33"}
+
+
+def describe_quality(quality: dict | None) -> tuple[str, str]:
+    """(short text, colour) for the calibration status line."""
+    if quality is None:
+        return "quality not measured", ""
+    verdict = quality.get("verdict", "?")
+    accuracy = quality.get("accuracy")
+    short = f"quality {100 * accuracy:.1f} %" if accuracy is not None else "unusable"
+    return short, QUALITY_COLOR.get(verdict, "")

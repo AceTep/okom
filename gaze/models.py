@@ -197,3 +197,62 @@ def train_predictor(
         raise ValueError(f"{recording.path.name}: {problem}")
     model.fit(data.x, data.screen)
     return ScreenPredictor(kind, names, model, softness), data
+
+
+@dataclass(frozen=True, slots=True)
+class Quality:
+    """How usable a fresh calibration is, with a message the user can act on."""
+
+    verdict: str  # "good" | "weak" | "unusable"
+    accuracy: float | None  # leave-one-point-out accuracy of the configured model
+    model: str
+    message: str
+    no_face_fraction: float
+
+    def as_dict(self) -> dict:
+        return {
+            "verdict": self.verdict,
+            "accuracy": self.accuracy,
+            "model": self.model,
+            "message": self.message,
+            "no_face_fraction": self.no_face_fraction,
+        }
+
+
+def assess(
+    recording: Recording,
+    kind: str,
+    feature_set: str,
+    blink_threshold: float,
+    good_accuracy: float,
+) -> Quality:
+    """Check a recording right after it was made, the same way eval.screen_accuracy does."""
+    names = ("pitch",) if kind == "threshold" else FEATURE_SETS[feature_set]
+    label = kind if kind == "threshold" else f"{kind} [{feature_set}]"
+    no_face = float(np.mean(~recording.has_face)) if len(recording.has_face) else 1.0
+    data = build_dataset([recording], names, blink_threshold)
+
+    screen_names = [s["name"] for s in recording.meta["screens"]]
+    total_points = int(recording.point.max()) if len(recording.point) else 0
+    for index, name in enumerate(screen_names):
+        seen = len(np.unique(data.group[data.screen == index]))
+        if seen < 2:
+            message = (
+                f"face seen at only {seen} of {total_points} points on screen {index} ({name}): "
+                "look at that screen during its part and make sure the camera sees your face"
+            )
+            return Quality("unusable", None, label, message, no_face)
+
+    factory = ThresholdClassifier if kind == "threshold" else make_logreg
+    accuracy = float(np.mean(leave_one_point_out(data, factory) == data.screen))
+    hint = ""
+    if no_face > 0.2:
+        hint = f"; no face in {100 * no_face:.0f} % of samples, check the light"
+    if accuracy >= good_accuracy:
+        message = f"screens told apart in {100 * accuracy:.1f} % of frames{hint}"
+        return Quality("good", accuracy, label, message, no_face)
+    message = (
+        f"screens told apart in only {100 * accuracy:.1f} % of frames: they look too alike "
+        f"to the camera. Follow the dot on each screen and calibrate again{hint}"
+    )
+    return Quality("weak", accuracy, label, message, no_face)

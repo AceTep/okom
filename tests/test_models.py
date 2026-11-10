@@ -104,3 +104,49 @@ def test_lopo_refuses_one_sided_data(tmp_path) -> None:
     data = build_dataset([rec], ("pitch",), 0.5)
     with pytest.raises(ValueError, match="screen"):
         leave_one_point_out(data, make_logreg)
+
+
+def drop_faces(session, screen=None, points=None):
+    """Remove the face from samples recorded on a screen (optionally only some points)."""
+    for i, sample in enumerate(session.samples):
+        target = next(
+            (
+                st
+                for st in session.timeline
+                if isinstance(st, Target) and st.start <= sample.t < st.end
+            ),
+            None,
+        )
+        if target and target.screen == screen and (points is None or target.number in points):
+            session.samples[i] = Sample(sample.t, None, 0)
+    return session
+
+
+def quality_of(session, tmp_path, name):
+    from gaze.calibration import record_quality
+
+    cfg = load_config()
+    return record_quality(save(session, cfg, name, out_dir=tmp_path), cfg)
+
+
+def test_quality_good(tmp_path) -> None:
+    q = quality_of(fake_session(), tmp_path, "good")
+    assert q.verdict == "good" and q.accuracy > 0.95
+    assert load(next(tmp_path.iterdir())).meta["quality"]["verdict"] == "good"  # stored
+
+
+def test_quality_weak_when_screens_look_alike(tmp_path) -> None:
+    q = quality_of(fake_session((-10.0, -9.0), noise=3.0), tmp_path, "weak")
+    assert q.verdict == "weak" and "too alike" in q.message
+
+
+def test_quality_unusable_without_face_on_a_screen(tmp_path) -> None:
+    q = quality_of(drop_faces(fake_session(), screen=1), tmp_path, "noface")
+    assert q.verdict == "unusable" and q.accuracy is None
+    assert "0 of 15 points on screen 1 (eDP-1)" in q.message
+
+
+def test_quality_hint_when_face_often_missing(tmp_path) -> None:
+    session = drop_faces(fake_session(), screen=0, points=set(range(1, 10)))
+    q = quality_of(session, tmp_path, "dim")
+    assert "check the light" in q.message

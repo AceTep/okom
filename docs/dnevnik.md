@@ -426,3 +426,39 @@ Za uredno zaustavljanje launcher se oslanja na gašenje na SIGTERM (odjeljak izn
 - Calibrate s uvjetom bez snimanja: Start je onemogućen. Prekinuta kalibracija ništa ne sprema i vraća launcher u stanje mirovanja.
 
 105 testova prolazi.
+
+### Povratna informacija pri kalibraciji
+
+**Problem (Mateo):** ako se tijekom kalibracije ne gleda pravi ekran ili kamera ne vidi lice, kalibracija se spremi, a greška se vidi tek kad `gaze.main` ne može naučiti model ili radi loše.
+
+**Upozorenje uživo** (`gaze/overlay.py`, `gaze/session.py`)
+- Nit kamere pamti kad je zadnji put vidjela lice. Ako lica nema dulje od `calibration.face_warning_s` (0,5 s), rub aktivnog ekrana postaje crven, a na dnu piše *"Can't see your face: face the camera and check the light"*. Korisnik problem vidi odmah i može ga ispraviti dok snimanje traje.
+- Snimanje se ne prekida: uzorci bez lica se ionako ne koriste.
+- Je li korisnik gledao **pravi** ekran ne može se pouzdano znati za vrijeme snimanja, jer model tada još ne postoji. Zato postoji ocjena na kraju.
+
+**Ocjena kvalitete nakon snimanja** (`gaze.models.assess`, `gaze.calibration.record_quality`)
+- Odmah nakon spremanja snimanje se ocijeni istom metodom kao `eval.screen_accuracy` (leave-one-point-out), s modelom iz konfiguracije. Rezultat se zapisuje u `meta.json` kao polje `quality`.
+- Tri ishoda, s porukom koja kaže što napraviti:
+  - **good** (≥ `calibration.good_accuracy`, 95 %): npr. *"screens told apart in 99.6 % of frames"*
+  - **weak**: *"screens told apart in only 72 % of frames: they look too alike to the camera. Follow the dot on each screen and calibrate again"*
+  - **unusable** (lice viđeno na manje od 2 točke nekog ekrana): *"face seen at only 0 of 15 points on screen 1 (eDP-1): look at that screen during its part…"*
+  - Ako više od 20 % uzoraka nema lice, poruka dodaje *"check the light"*.
+- Launcher uz kalibraciju prikazuje ocjenu u boji (zeleno, narančasto, crveno), a nakon kalibracije i poruku. **Start je onemogućen za neupotrebljivu kalibraciju.** Kod slabe kalibracije odluka je na korisniku.
+- `gaze.main` za neupotrebljivu kalibraciju umjesto tracebacka javlja razlog i "calibrate again".
+
+**Naknadno ocijenjena postojeća snimanja** (u `meta.json` dodano je samo polje `quality`, ostalo je provjereno nepromijenjeno):
+
+| Snimanje | Ocjena |
+| --- | --- |
+| `20261110-204709_normal` | good, 99,6 % |
+| `20261110-205000_naocale` | good, 99,8 % |
+| `20261110-215841_normal` (snimljeno preko launchera) | good, **96,5 %** |
+
+Treće snimanje je primjetno slabije od prvog u istim uvjetima: donji red monitora ima 86,7 %, a donji red laptopa 94,4 %. **Točnost dakle varira između kalibracija iste osobe**, za ~3 postotna boda. To je argument za prikaz ocjene u GUI-ju i nalaz za rad: jedna kalibracija nije dovoljna za pouzdan broj, treba ih više.
+
+**Greška pronađena pri prvoj probi (Mateo: "ne da mi kalibrirati"):** nit za snimanje dobila je atribut `_started`, a to ime već interno koristi Pythonov `threading.Thread`. `start()` se zato srušio (`'float' object has no attribute 'is_set'`), pa kalibracija nije ni krenula. Ista vrsta greške dogodila se danas već jednom (`_stop`). Test nije pomogao jer je objekt stvarao zaobilazeći konstruktor.
+- Popravak: atribut je preimenovan u `_ready_at`.
+- **Novi test** čita imena atributa koje koriste metode klase `_Recorder` i provjerava da se nijedno ne poklapa s privatnim atributima klase `Thread`. Provjereno je da test pada kad se greška vrati.
+- Nakon popravka kalibracija na sustavu prolazi do kraja, sprema se i dobiva ocjenu.
+
+112 testova prolazi.

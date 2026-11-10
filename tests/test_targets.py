@@ -4,7 +4,14 @@ from gaze.config import CalibrationConfig
 from gaze.targets import Countdown, Target, build_timeline, grid_points, label_samples, step_at
 
 CFG = CalibrationConfig(
-    grid_cols=5, grid_rows=3, margin=0.1, countdown_s=3.0, settle_s=0.4, record_s=0.6
+    grid_cols=5,
+    grid_rows=3,
+    margin=0.1,
+    countdown_s=3.0,
+    settle_s=0.4,
+    record_s=0.6,
+    face_warning_s=0.5,
+    good_accuracy=0.95,
 )
 
 

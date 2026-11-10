@@ -171,7 +171,27 @@ def main() -> None:
     if not result.completed:
         log.error("aborted, nothing saved")
         return
-    save(result, cfg, args.condition)
+    path = save(result, cfg, args.condition)
+    quality = record_quality(path, cfg)
+    level = {"good": logging.INFO, "weak": logging.WARNING}.get(quality.verdict, logging.ERROR)
+    log.log(level, "calibration quality: %s, %s", quality.verdict.upper(), quality.message)
+
+
+def record_quality(path: Path, cfg: GazeConfig):
+    """Assess a saved recording with the configured model and store the result in meta.json."""
+    from gaze.models import assess
+
+    rec = load(path)
+    quality = assess(
+        rec,
+        cfg.model.kind,
+        cfg.model.feature_set,
+        cfg.features.blink_threshold,
+        cfg.calibration.good_accuracy,
+    )
+    rec.meta["quality"] = quality.as_dict()
+    (path / "meta.json").write_text(json.dumps(rec.meta, indent=2))
+    return quality
 
 
 if __name__ == "__main__":

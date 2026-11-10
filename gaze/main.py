@@ -75,9 +75,12 @@ def make_predictor(
         recording_path = recordings[-1]
     rec = load(recording_path)
     m = cfg.model
-    predictor, data = train_predictor(
-        rec, m.kind, m.feature_set, cfg.features.blink_threshold, m.softness_deg
-    )
+    try:
+        predictor, data = train_predictor(
+            rec, m.kind, m.feature_set, cfg.features.blink_threshold, m.softness_deg
+        )
+    except ValueError as exc:
+        raise SystemExit(f"cannot use calibration {exc}; calibrate again") from None
     train_acc = float((predictor.model.predict(data.x) == data.screen).mean())
     detail = (
         f"pitch threshold {predictor.model.threshold_:.1f} deg"

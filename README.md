@@ -56,7 +56,7 @@ Okruženje mora biti aktivno (`source .venv/bin/activate`) u svakom terminalu.
 python -m okom
 ```
 
-Otvara se prozor sa stanjem (ekrani, backend, model, kalibracija) i gumbima **Calibrate**, **Start / Stop** i **Hide to tray**. Kvačica **Share camera (OBS)** dijeli kameru s OBS-om. Launcher samo pokreće programe ispod, pa sve radi i iz terminala:
+Otvara se prozor sa stanjem (ekrani, backend, model, kalibracija s ocjenom kvalitete) i gumbima **Calibrate**, **Start / Stop** i **Hide to tray**. Ako kamera tijekom kalibracije ne vidi lice, vodič to odmah javi, a nakon kalibracije launcher kaže je li dobra. Kvačica **Share camera (OBS)** dijeli kameru s OBS-om. Launcher samo pokreće programe ispod, pa sve radi i iz terminala:
 
 **Prebacivanje ekrana pogledom iz terminala**: prvo jednom kalibracija, zatim dva terminala:
 

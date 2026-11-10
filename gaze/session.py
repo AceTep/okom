@@ -42,17 +42,28 @@ class _Recorder(threading.Thread):
         self.ready = threading.Event()
         self.failed: str | None = None
         self._stop_event = threading.Event()
+        self._ready_at = 0.0
+        self._last_face: float | None = None  # capture time of the last frame with a face
+
+    def seconds_without_face(self) -> float:
+        """How long no face has been seen (since start if never). Read by the UI thread."""
+        last = self._last_face if self._last_face is not None else self._ready_at
+        return max(0.0, time.time() - last)
 
     def run(self) -> None:
         try:
             with Camera(self._cfg.camera) as cam, LandmarkDetector(self._cfg.landmarks) as det:
+                self._ready_at = time.time()
                 self.ready.set()
                 while not self._stop_event.is_set():
                     frame = cam.read(timeout=0.5)
                     if frame is None:
                         continue
                     faces = det.detect(frame)
-                    self.samples.append(Sample(frame.t, primary_face(faces), len(faces)))
+                    face = primary_face(faces)
+                    if face is not None:
+                        self._last_face = frame.t
+                    self.samples.append(Sample(frame.t, face, len(faces)))
         except Exception as exc:  # reported to the UI, which then stops
             log.exception("recorder failed")
             self.failed = str(exc)
@@ -92,7 +103,12 @@ def run_session(cfg: GazeConfig, screens: list[int] | None = None) -> SessionRes
 
     timeline = build_timeline(order, cfg.calibration, start=time.time() + 0.5)
     try:
-        completed = run_overlay(app, timeline, should_stop=lambda: recorder.failed is not None)
+        completed = run_overlay(
+            app,
+            timeline,
+            should_stop=lambda: recorder.failed is not None,
+            face_missing=lambda: recorder.seconds_without_face() >= cfg.calibration.face_warning_s,
+        )
     finally:
         recorder.stop()
     return SessionResult(timeline, recorder.samples, completed and not recorder.failed, geometry)

@@ -27,6 +27,8 @@ ACTIVE_BG = QColor(26, 28, 36)
 IDLE_BG = QColor(0, 0, 0)
 TEXT = QColor(230, 230, 235)
 DIM_TEXT = QColor(90, 90, 100)
+WARNING = QColor(255, 90, 80)
+FACE_WARNING = "Can't see your face: face the camera and check the light"
 BORDER_PX = 8
 DOT_PX = 10
 RING_START_PX = 44  # ring shrinks from this to DOT_PX while the eyes settle
@@ -44,6 +46,7 @@ class ScreenWindow(QWidget):
         super().__init__()
         self.index = index
         self.step: Step | None = None
+        self.face_missing = False
         self._on_abort = on_abort
         self.setWindowTitle(f"okom calibration {index}")
         self.setCursor(Qt.CursorShape.BlankCursor)
@@ -63,11 +66,14 @@ class ScreenWindow(QWidget):
             return
 
         p.fillRect(self.rect(), ACTIVE_BG)
-        p.setPen(QPen(ACCENT, BORDER_PX))
+        p.setPen(QPen(WARNING if self.face_missing else ACCENT, BORDER_PX))
         half = BORDER_PX / 2
         p.drawRect(QRectF(half, half, self.width() - BORDER_PX, self.height() - BORDER_PX))
         corner = QRectF(48, 40, self.width() - 96, 160)
         top_left = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        if self.face_missing:
+            bottom = QRectF(48, self.height() - 140, self.width() - 96, 80)
+            self._text(p, bottom, FACE_WARNING, 26, WARNING, Qt.AlignmentFlag.AlignCenter)
 
         if isinstance(step, Countdown):
             left = max(1, math.ceil(step.end - now))
@@ -109,8 +115,13 @@ def run_overlay(
     app: QApplication,
     timeline: list[Step],
     should_stop: Callable[[], bool] = lambda: False,
+    face_missing: Callable[[], bool] = lambda: False,
 ) -> bool:
-    """Show the timeline on all screens. Returns True if it ran to the end."""
+    """Show the timeline on all screens. Returns True if it ran to the end.
+
+    face_missing() is polled on every frame; while it is True the active screen
+    shows a warning, so the user can fix it before the recording is wasted.
+    """
     state = {"aborted": False, "stop_requested": False}
 
     def abort() -> None:
@@ -140,8 +151,10 @@ def run_overlay(
             app.quit()
             return
         step = step_at(timeline, now)
+        missing = face_missing()
         for w in windows:
             w.step = step
+            w.face_missing = missing
             w.update()
 
     timer = QTimer()

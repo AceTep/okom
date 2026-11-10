@@ -42,11 +42,13 @@ from PySide6.QtWidgets import (
 
 from okom.commands import (
     MODEL_FILE,
+    QUALITY_COLOR,
     REPO_ROOT,
     Command,
     calibrate_command,
     can_share_camera,
     describe_age,
+    describe_quality,
     latest_calibration,
     start_commands,
 )
@@ -82,6 +84,7 @@ class Launcher(QWidget):
         self.setWindowIcon(make_icon())
         self._procs: dict[str, QProcess] = {}
         self._mode = "idle"  # idle | calibrating | running | stopping
+        self._calibration_before = None  # newest recording when Calibrate was pressed
         self._build_ui()
         self._build_tray()
         self._check_environment()
@@ -232,16 +235,20 @@ class Launcher(QWidget):
             note = ""
             if c.screens != self.screen_names:
                 note = f"<br>⚠ recorded with screens {', '.join(c.screens)}, calibrate again"
+            if c.quality and c.quality.get("verdict") != "good":
+                note += f"<br>{c.quality.get('message', '')}"
+            quality, color = describe_quality(c.quality)
+            if color:
+                quality = f"<span style='color:{color}'>{quality}</span>"
+            mark = OK if c.usable else BAD
             when = describe_age(c.started)
-            self.calibration_label.setText(
-                f"{OK} {c.condition}, {when}, {c.samples_with_face} samples{note}"
-            )
+            self.calibration_label.setText(f"{mark} {c.condition}, {when}, {quality}{note}")
 
         busy = self._mode != "idle"
         self.condition.setEnabled(not busy)
         self.share_camera.setEnabled(not busy and can_share_camera())
         self.calibrate_btn.setEnabled(not busy and self.model_ok and bool(condition))
-        can_start = self.model_ok and self.calibration is not None
+        can_start = self.model_ok and self.calibration is not None and self.calibration.usable
         self.start_btn.setEnabled(self._mode == "running" or (not busy and can_start))
         self.start_btn.setText("Stop" if self._mode == "running" else "Start")
         if self.tray is not None:
@@ -260,6 +267,7 @@ class Launcher(QWidget):
     # ---- processes --------------------------------------------------------
 
     def calibrate(self) -> None:
+        self._calibration_before = self.calibration.path if self.calibration else None
         self._mode = "calibrating"
         self._run(calibrate_command(self.condition.text(), self.share_camera.isChecked()))
         self.refresh()
@@ -320,6 +328,9 @@ class Launcher(QWidget):
             if code != 0:
                 self._error(f"Calibration failed (exit code {code}), see the log.")
                 return
+            self.refresh()
+            self._report_calibration()
+            return
         elif self._mode == "running":
             # one of the two died on its own: stop the other, it is useless alone
             self._error(f"{label} stopped unexpectedly (exit code {code}), see the log.")
@@ -328,6 +339,28 @@ class Launcher(QWidget):
         elif self._mode == "stopping" and not self._procs:
             self._mode = "idle"
         self.refresh()
+
+    def _report_calibration(self) -> None:
+        """Tell the user right away whether the calibration just made is any good."""
+        c = self.calibration
+        if c is None or c.path == self._calibration_before:
+            self.status.setText("Calibration aborted, nothing saved.")
+            return
+        if c.quality is None:
+            self.status.setText("Calibration saved.")
+            return
+        verdict = c.quality.get("verdict")
+        color = QUALITY_COLOR.get(verdict, "")
+        text = {
+            "good": "Calibration saved and good",
+            "weak": "Calibration saved but weak",
+            "unusable": "Calibration not usable",
+        }.get(verdict, "Calibration saved")
+        self.status.setText(
+            f"<span style='color:{color}'>{text}: {c.quality.get('message', '')}</span>"
+        )
+        if verdict != "good":
+            self.show_window()
 
     def _error(self, message: str) -> None:
         self.refresh()

@@ -27,6 +27,8 @@ calibration:
   countdown_s: 3.0    # before each screen
   settle_s: 0.4       # after the dot moves; eyes need time to get there, not recorded
   record_s: 0.6       # recorded per point
+  face_warning_s: 0.5 # warn on screen when no face has been seen for this long
+  good_accuracy: 0.95 # quality check after recording: below this the calibration is "weak"
 
 udp:
   host: 127.0.0.1
