@@ -167,3 +167,47 @@ Uz ovo svjetlo prekidač ne mijenja ništa. Razlika se očekuje navečer ili u t
 | on | 29,9 | 39 ms |
 
 Potvrđeno je da kamera u mraku sama prepolovi FPS i da je prekidač to sprječava. Zato je `fixed_framerate: true` zadana vrijednost. Otvoreno pitanje je je li tamnija i zrnatija slika u mraku dovoljna za pouzdano prepoznavanje šarenice. To se provjerava u koraku 2.
+
+### Gaze engine, korak 2: značajke
+
+**MediaPipe Face Landmarker** (`gaze/landmarks.py`)
+- Način rada `VIDEO`, uz praćenje lica između slika. Vremenske oznake moraju strogo rasti, pa se po potrebi povećaju za 1 ms.
+- Vraća 478 točaka (uključujući šarenice), 52 blendshapea i 4×4 matricu poze glave (rotacija + translacija u cm).
+- `num_faces: 2`, da se primijeti druga osoba u kadru. Za značajke se uzima **najbliže lice**, ono s najvećim razmakom između zjenica.
+- Izmjereno: **13–17 ms po slici** (p95 22 ms). To stane u 33 ms, pa se uz MediaPipe drži puna brzina od **30 FPS bez preskočenih slika**.
+
+**Značajke** (`gaze/features.py`, čista matematika bez MediaPipea, 12 testova na umjetnim licima)
+- **Poza glave:** pitch, yaw i roll (Eulerovi kutovi, R = Rz·Ry·Rx) i položaj glave x, y, z u cm. Predznak pitcha (je li gore + ili −) određuje se mjerenjem, ne pretpostavkom.
+- **Položaj šarenice u oku**, za svako oko posebno:
+  - `h`: položaj duž crte od kuta do kuta oka, od 0 do 1.
+  - `v`: udaljenost od te crte, podijeljena sa širinom oka; pozitivno znači prema dolje u slici.
+  - Ne ovisi o veličini lica ni o nagibu glave u ravnini slike (testirano).
+- **Blendshapeovi:** `look_up`, `look_down` (prosjek oba oka) i `blink` po oku. Treptaj je `blink ≥ 0,5` (prekidač u configu).
+- `eye_distance_px` služi kao mjera veličine lica, odnosno udaljenosti.
+- `Face` je definiran u `features.py`, a ne u `landmarks.py`, da značajke i njihovi testovi ne uvoze MediaPipe.
+
+**Alat za provjeru** (`python -m gaze.feature_probe`)
+- Ispisuje vrijednosti uživo dvaput u sekundi. Slike se ne spremaju i ne prikazuju.
+- `--compare` je vođeni test: 5 s gledanja u monitor, zatim 5 s u laptop. Zatim se za svaku značajku ispiše prosjek na oba ekrana i odvojivost **d′** = razlika prosjeka podijeljena sa zajedničkom standardnom devijacijom. d′ > 2 znači da se ekrani dobro razlikuju, a d′ > 4 vrlo dobro. Uzorci s treptajem se preskaču.
+- Prva proba uživo: pitch od −15° do −20°, šarenica h ≈ 0,5, glava 46 cm od kamere.
+
+**Prvo mjerenje odvojivosti ekrana** (`--compare`, Mateo, 5 s po ekranu, 151 uzorak po ekranu, bez treptaja i bez izgubljenog lica)
+
+| Značajka | Monitor | Laptop | d′ |
+| --- | --- | --- | --- |
+| pitch | −19,6° | −6,5° | **7,7** |
+| head_z | −41,5 cm | −39,7 cm | 6,0 |
+| head_y | −15,0 | −16,2 | 4,0 |
+| iris_v (L / D) | −0,110 / −0,115 | −0,049 / −0,052 | **3,5** |
+| eye_distance_px | 95,6 | 99,2 | 2,8 |
+| blink (L / D) | 0,04 | 0,10 / 0,11 | 2,4 / 1,5 |
+| roll, yaw | | | 0,8 / 0,7 |
+| look_up, look_down | | | 0,5 / 0,4 |
+| head_x, iris_h | | | ≤ 0,3 |
+
+Zaključci:
+- **Poza glave (pitch) i položaj šarenice (iris_v) razlikuju ekrane neovisno jedno o drugome.** To je i više nego dovoljno za dva ekrana. Predznak pitcha je izmjeren: **pogled gore znači negativniji pitch**.
+- head_z, head_y i eye_distance_px razlikuju ekrane samo zato što se korisnik pri gledanju laptopa nagne ~2 cm bliže. To je posljedica držanja tijela i ne mora se ponoviti u drugom snimanju. U koraku 3 treba usporediti model s tim značajkama i bez njih, na odvojenim snimanjima.
+- Kad korisnik gleda dolje, `blink` raste, ali ostaje daleko od praga 0,5, pa nema lažnih treptaja.
+- MediaPipeovi blendshapeovi za smjer pogleda (`eyeLookUp/Down`) gotovo ne razlikuju ekrane.
+- d′ je ovdje vjerojatno optimističan: jedno kratko snimanje, a susjedne slike su jako slične. Pouzdan broj točnosti dat će kalibracija s točkama i provjera na odvojenom snimanju.
