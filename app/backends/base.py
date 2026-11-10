@@ -1,0 +1,66 @@
+"""Common interface for platform focus backends."""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+from shared.screens import order_screens
+
+
+@dataclass(frozen=True, slots=True)
+class Rect:
+    x: int
+    y: int
+    w: int
+    h: int
+
+    def contains(self, px: float, py: float) -> bool:
+        return self.x <= px < self.x + self.w and self.y <= py < self.y + self.h
+
+    def area_overlap(self, other: Rect) -> int:
+        dx = min(self.x + self.w, other.x + other.w) - max(self.x, other.x)
+        dy = min(self.y + self.h, other.y + other.h) - max(self.y, other.y)
+        return max(dx, 0) * max(dy, 0)
+
+
+@dataclass(frozen=True, slots=True)
+class Screen:
+    index: int  # protocol index, see shared/screens.py
+    name: str  # output name, e.g. "eDP-1"
+    rect: Rect  # logical pixels in the global layout
+
+
+@dataclass(frozen=True, slots=True)
+class Window:
+    id: str
+    title: str
+    rect: Rect
+    screen: str  # output name the compositor assigns the window to
+    stack: int  # stacking position, higher is closer to the top
+    active: bool
+
+
+def index_screens(named: list[tuple[str, Rect]]) -> list[Screen]:
+    """Assign protocol indices to (name, rect) pairs."""
+    ordered = order_screens(named, key=lambda s: (s[0], s[1].x, s[1].y))
+    return [Screen(i, name, rect) for i, (name, rect) in enumerate(ordered)]
+
+
+class FocusBackend(ABC):
+    name: str = "base"
+
+    @abstractmethod
+    def list_screens(self) -> list[Screen]:
+        """Screens in protocol order."""
+
+    @abstractmethod
+    def list_windows(self) -> list[Window]:
+        """Normal, visible windows on the current desktop."""
+
+    @abstractmethod
+    def focus(self, window_id: str) -> bool:
+        """Give keyboard focus to a window. Returns True on success."""
+
+    def close(self) -> None:  # noqa: B027 - optional hook
+        """Release resources."""

@@ -1,0 +1,8 @@
+# Config files (app/config.yaml)
+pyyaml>=6.0
+# D-Bus client for the KDE backend (pure Python, no system libs)
+jeepney>=0.9; sys_platform == "linux"
+
+# Development
+pytest>=8.0
+ruff>=0.6
