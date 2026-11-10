@@ -25,6 +25,7 @@ from gaze.landmarks import LandmarkDetector
 from gaze.models import ScreenPredictor, train_predictor
 from gaze.sender import GazeSender
 from gaze.smoothing import OneEuroFilter
+from shared.logs import setup_logging
 from shared.protocol import GazeMessage
 from shared.signals import sigterm_as_keyboard_interrupt
 
@@ -150,7 +151,7 @@ def run(cfg: GazeConfig, predictor: ScreenPredictor) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    setup_logging("gaze", "%(asctime)s %(message)s")
     parser = argparse.ArgumentParser(description="Run the gaze engine.")
     which = parser.add_mutually_exclusive_group()
     which.add_argument("--recording", type=Path, help="calibration to train on (default: newest)")

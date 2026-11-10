@@ -15,10 +15,11 @@ import os
 import signal
 import sys
 
-from PySide6.QtCore import QProcess, QProcessEnvironment, QRegularExpression, Qt, QTimer
+from PySide6.QtCore import QProcess, QProcessEnvironment, QRegularExpression, Qt, QTimer, QUrl
 from PySide6.QtGui import (
     QAction,
     QColor,
+    QDesktopServices,
     QGuiApplication,
     QIcon,
     QPainter,
@@ -52,6 +53,7 @@ from okom.commands import (
     latest_calibration,
     start_commands,
 )
+from shared.logs import LOG_DIR, setup_logging
 from shared.screens import order_screens
 
 log = logging.getLogger("okom")
@@ -141,6 +143,10 @@ class Launcher(QWidget):
 
         self.status = QLabel()
         self.status.setWordWrap(True)
+        self.logs_dir_btn = QPushButton("Open logs")
+        self.logs_dir_btn.setFlat(True)
+        self.logs_dir_btn.setToolTip(f"Log files of every run: {LOG_DIR}")
+        self.logs_dir_btn.clicked.connect(self.open_logs)
         self.log_btn = QPushButton("Show log ▸")
         self.log_btn.setFlat(True)
         self.log_btn.clicked.connect(self.toggle_log)
@@ -152,6 +158,7 @@ class Launcher(QWidget):
 
         bottom = QHBoxLayout()
         bottom.addWidget(self.status, 1)
+        bottom.addWidget(self.logs_dir_btn)
         bottom.addWidget(self.log_btn)
 
         layout = QVBoxLayout(self)
@@ -189,6 +196,10 @@ class Launcher(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
+
+    def open_logs(self) -> None:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(LOG_DIR)))
 
     def toggle_log(self) -> None:
         visible = not self.log_view.isVisible()
@@ -311,7 +322,9 @@ class Launcher(QWidget):
             lambda err: self._log(cmd.label, f"could not run {cmd.program}: {err.name}")
         )
         self._procs[cmd.label] = proc
-        self._log(cmd.label, "$ " + " ".join([cmd.program, *cmd.args]))
+        command_line = " ".join([cmd.program, *cmd.args])
+        log.info("start %s: %s", cmd.label, command_line)
+        self._log(cmd.label, "$ " + command_line)
         proc.start(cmd.program, cmd.args)
 
     def _read(self, label: str, proc: QProcess) -> None:
@@ -322,6 +335,7 @@ class Launcher(QWidget):
 
     def _finished(self, label: str, code: int) -> None:
         self._procs.pop(label, None)
+        log.info("%s exited with code %d (mode %s)", label, code, self._mode)
         self._log(label, f"exited with code {code}")
         if self._mode == "calibrating":
             self._mode = "idle"
@@ -389,7 +403,7 @@ class Launcher(QWidget):
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    setup_logging("launcher", "%(asctime)s %(message)s")
     os.chdir(REPO_ROOT)
     app = QApplication(sys.argv)
     app.setApplicationName("OKOM")

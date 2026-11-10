@@ -462,3 +462,22 @@ Treće snimanje je primjetno slabije od prvog u istim uvjetima: donji red monito
 - Nakon popravka kalibracija na sustavu prolazi do kraja, sprema se i dobiva ocjenu.
 
 112 testova prolazi.
+
+### Zapisivanje logova u datoteke
+
+**Zašto (Mateo):** lakše traženje grešaka. Današnji pad kalibracije vidio se samo u terminalu, a iz launchera se ne bi vidio ni toliko.
+
+**Kako radi** (`shared/logs.py`)
+- Svaki program (`app`, `gaze`, `calibration`, `mock_gaze`, `feature_probe`, `launcher`) uz terminal piše i u vlastitu datoteku po pokretanju: `data/logs/<datum-vrijeme>_<program>.log`.
+- Prvi redak datoteke je točna naredba. Svaki zapis ima datum, milisekunde, razinu, nit i modul.
+- **Neuhvaćene greške**, i u glavnoj i u pozadinskim nitima, upisuju se s cijelim tracebackom prije nego program završi (`sys.excepthook`, `threading.excepthook`).
+- Čuva se zadnjih 30 datoteka po programu, a starije se brišu.
+- Ako se datoteka ne može napisati (npr. disk samo za čitanje), program radi dalje i samo to javi.
+- Launcher ima gumb **Open logs** koji otvara mapu. U svoju datoteku zapisuje koje je procese pokrenuo i s kojim su izlaznim kodom završili.
+- Dijagnostički alati (`detect`, `kde_wayland`, `camera`, `eval`) i dalje pišu samo u terminal.
+
+**Privatnost:** logovi aplikacije sadrže **naslove prozora**, a oni mogu biti osobni (npr. ime razgovora). `data/` se nikad ne commita. Prije korisničkog testa treba odlučiti hoće li se naslovi u logu skrivati.
+
+**Provjereno na sustavu:** `app` i `gaze` napisali su svoje datoteke, a namjerni pad (nepostojeća kalibracija) završio je u datoteci kao `CRITICAL uncaught exception` s cijelim tracebackom.
+
+115 testova prolazi.

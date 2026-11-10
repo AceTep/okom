@@ -22,6 +22,7 @@ from gaze.camera import Camera
 from gaze.config import GazeConfig, load_config
 from gaze.features import FEATURE_NAMES, extract, is_blinking, primary_face, separation
 from gaze.landmarks import LandmarkDetector
+from shared.logs import setup_logging
 
 log = logging.getLogger("gaze.feature_probe")
 
@@ -103,7 +104,7 @@ def compare(cfg: GazeConfig) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    setup_logging("feature_probe", "%(asctime)s %(message)s")
     parser = argparse.ArgumentParser(description="Inspect gaze features from the camera.")
     parser.add_argument("--compare", action="store_true", help="guided test on all screens")
     args = parser.parse_args()

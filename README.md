@@ -104,6 +104,10 @@ ruff check . && ruff format .        # lint i format
 
 Nepoznat ili nedostajući ključ u konfiguraciji je greška, pa se tipfeler odmah vidi.
 
+## Logovi
+
+Svaki program piše log svakog pokretanja u `data/logs/<datum-vrijeme>_<program>.log`, zajedno s cijelim tracebackom ako se sruši. U launcheru ih otvara gumb **Open logs**.
+
 ## Privatnost
 
-Snimke lica, kalibracijski podaci i logovi spremaju se u `data/` i nikad se ne commitaju. Gaze engine ne sprema video, za modele su dovoljne značajke.
+Snimke lica, kalibracijski podaci i logovi spremaju se u `data/` i nikad se ne commitaju. Logovi sadrže naslove prozora. Gaze engine ne sprema video, za modele su dovoljne značajke.

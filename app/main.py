@@ -14,6 +14,7 @@ from app.config import load_config
 from app.decision import ScreenDecider
 from app.mapping import focus_candidates, screen_of_active
 from app.receiver import GazeReceiver
+from shared.logs import setup_logging
 from shared.protocol import GazeMessage
 from shared.signals import sigterm_as_keyboard_interrupt
 
@@ -59,9 +60,7 @@ def follow_focus(events: FocusEvents, screen_index: dict[str, int], decider: Scr
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    setup_logging("app", "%(asctime)s %(levelname)s %(name)s: %(message)s")
     config = load_config()
     receiver = GazeReceiver(config.udp.host, config.udp.port)  # fails fast if the port is taken
     backend = create_backend()

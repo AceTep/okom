@@ -29,6 +29,7 @@ from gaze.config import GazeConfig
 from gaze.features import Face, Features, extract
 from gaze.session import SessionResult
 from gaze.targets import label_samples
+from shared.logs import setup_logging
 from shared.signals import sigterm_as_keyboard_interrupt
 
 log = logging.getLogger(__name__)
@@ -150,7 +151,7 @@ def main() -> None:
     from gaze.config import load_config
     from gaze.session import run_session
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    setup_logging("calibration", "%(asctime)s %(message)s")
     parser = argparse.ArgumentParser(description="Record a calibration session.")
     parser.add_argument(
         "--condition",

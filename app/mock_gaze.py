@@ -19,6 +19,7 @@ from collections import deque
 from app.backends.base import Screen
 from app.backends.detect import create_backend
 from app.config import MockGazeConfig, load_config
+from shared.logs import setup_logging
 from shared.protocol import GazeMessage
 
 log = logging.getLogger("app.mock_gaze")
@@ -62,9 +63,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Mouse-driven fake gaze source.")
     parser.add_argument("--seed", type=int, default=None, help="noise seed for repeatable runs")
     args = parser.parse_args()
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    setup_logging("mock_gaze", "%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     config = load_config()
     cfg = config.mock_gaze
