@@ -63,13 +63,12 @@ def live(cfg: GazeConfig, cam: Camera, det: LandmarkDetector) -> None:
 def compare(cfg: GazeConfig) -> None:
     """Guided test on the fullscreen overlay: every calibration point on every screen."""
     from gaze.session import run_session
-    from gaze.targets import label_samples
 
     result = run_session(cfg)
     if not result.completed:
         log.error("aborted, nothing to compare")
         return
-    labelled = label_samples(result.timeline, ((s.t, s) for s in result.samples))
+    labelled = result.labelled()
     by_screen: dict[int, list[np.ndarray]] = {}
     no_face = blinks = 0
     for target, sample in labelled:

@@ -481,3 +481,32 @@ Treće snimanje je primjetno slabije od prvog u istim uvjetima: donji red monito
 **Provjereno na sustavu:** `app` i `gaze` napisali su svoje datoteke, a namjerni pad (nepostojeća kalibracija) završio je u datoteci kao `CRITICAL uncaught exception` s cijelim tracebackom.
 
 115 testova prolazi.
+
+### Kalibracija: krivi ekran i pauziranje
+
+**Problem (Mateo):** kalibracija je krenula na ekranu 0, a on je gledao ekran 1, i ništa se nije dogodilo. Upozorenje "nema lica" pokriva samo slučaj kad kamera ne vidi lice. Kad korisnik gleda krivi ekran, lice se vidi. Uz to je poruka bila sitna i pri dnu ekrana.
+
+**a) Ekran koji se ne kalibrira pokazuje kamo gledati.** Sad preko sredine ima veliku strelicu prema pravom ekranu, izračunatu iz rasporeda ekrana ("↑ Look at the screen ABOVE"), umjesto sitnog sivog "Look at screen 0". Korisnik koji gleda krivi ekran vidi uputu baš tamo gdje gleda. Ovo ne treba nikakvo prepoznavanje i radi i pri prvoj kalibraciji.
+
+**b) Prepoznavanje krivog ekrana uživo, uz model prethodne kalibracije**
+- Na početku kalibracije uzima se najnovija kalibracija ocijenjena kao **good**, snimljena s istim ekranima. Prednost ima isti uvjet, a ako takve nema, uzima se bilo koja dobra (`pick_prior`). Slaba ili neupotrebljiva kalibracija se nikad ne koristi, jer bi se njezine greške činile kao korisnikove.
+- Nit kamere za svaku sliku procijeni koji ekran korisnik gleda. Kao "krivi ekran" računa se samo pouzdana procjena (`conf ≥ 0,9`) koja traje barem 0,7 s (`WrongScreenDetector`), pa kratki pogled u stranu i nesigurno područje uz rub između ekrana nikad ne aktiviraju upozorenje.
+- Tada **točka čeka** (`PlaybackClock`: vrijeme rasporeda stoji). Ekran koji korisnik gleda postaje crven ("You are looking at this screen. The dot waits for you."), a aktivni ekran piše "Paused: look at this screen".
+- Uzorci od trenutka kad je korisnik skrenuo pogled (a ne tek od potvrde, 0,7 s kasnije) do nastavka izbacuju se iz snimanja. Pauze i izbačeni intervali bilježe se u realnom vremenu, a `label_samples` ih koristi da vremena snimanja preslika na raspored.
+- Bez prethodne dobre kalibracije provjere nema. Tada pomažu (a) i ocjena kvalitete na kraju.
+
+**c) Upozorenje "nema lica"** je sad veliko i na sredini ekrana. I tada točka čeka, jer su uzorci bez lica ionako beskorisni.
+
+**Zaštita:** pauza dulja od `max_pause_s` (30 s), npr. kad korisnik ode, prekida kalibraciju s jasnom porukom. Bez toga bi vodič čekao zauvijek. Ovo je uočeno pri planiranju probe, prije nego se dogodilo.
+
+**Usput:** odbrojavanje i brojač točaka bili su u gornjem lijevom kutu i preklapali su prvu točku mreže (vidi se na slici ekrana). Sad su na sredini, između gornjeg i srednjeg reda točaka, gdje točke nikad nema.
+
+**Pronađeno testom:** uzorci snimljeni za vrijeme pauze bili su pridruženi točki na kojoj je raspored stao. Sad se izbacuju.
+
+**Prekidači** (`gaze/config.yaml`, `calibration`): `pause_on_problems`, `wrong_screen_check`, `wrong_screen_after_s`, `wrong_screen_conf`, `max_pause_s`.
+
+**Provjereno**
+- Bez kamere: slike svih stanja (krivi ekran, nema lica, pauza) su pregledane. Pauza i izbacivanje imaju točna vremena (krivi pogled od 0,2 s, pauza od 0,9 s). Dugo čekanje prekida kalibraciju.
+- S kamerom i prethodnim modelom: tijekom dijela za laptop provjera je uhvatila pogled na monitor ("looking at screen 0 instead of 1"). Točka je čekala 1,6 s i nastavila kad je korisnik pogledao laptop. Kvaliteta skraćene kalibracije bila je 98,3 %.
+
+122 testa prolaze.

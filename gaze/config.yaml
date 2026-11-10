@@ -29,6 +29,11 @@ calibration:
   record_s: 0.6       # recorded per point
   face_warning_s: 0.5 # warn on screen when no face has been seen for this long
   good_accuracy: 0.95 # quality check after recording: below this the calibration is "weak"
+  pause_on_problems: true   # the dot waits while the face is missing or the wrong screen is watched
+  wrong_screen_check: true  # use the newest good calibration to notice the wrong screen live
+  wrong_screen_after_s: 0.7 # looking elsewhere this long counts (a short glance does not)
+  wrong_screen_conf: 0.9    # only confident predictions count, so the border area never alarms
+  max_pause_s: 30.0         # a pause longer than this (user left) aborts the calibration
 
 udp:
   host: 127.0.0.1

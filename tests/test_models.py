@@ -150,3 +150,31 @@ def test_quality_hint_when_face_often_missing(tmp_path) -> None:
     session = drop_faces(fake_session(), screen=0, points=set(range(1, 10)))
     q = quality_of(session, tmp_path, "dim")
     assert "check the light" in q.message
+
+
+def test_pick_prior(tmp_path) -> None:
+    import json
+
+    from gaze.calibration import pick_prior
+
+    def rec(name, condition, verdict, screens=("HDMI-A-1", "eDP-1")):
+        d = tmp_path / name
+        d.mkdir()
+        meta = {
+            "condition": condition,
+            "screens": [{"name": s} for s in screens],
+            "quality": {"verdict": verdict},
+        }
+        (d / "meta.json").write_text(json.dumps(meta))
+        return d
+
+    paths = [
+        rec("1_normal", "normal", "good"),
+        rec("2_glasses", "glasses", "good"),
+        rec("3_normal", "normal", "weak"),  # newest normal, but weak: never used
+        rec("4_normal", "normal", "good", screens=("DP-1", "eDP-1")),  # other screens
+    ]
+    screens = ["HDMI-A-1", "eDP-1"]
+    assert pick_prior(paths, screens, "normal").name == "1_normal"
+    assert pick_prior(paths, screens, "dim").name == "2_glasses"  # no same condition: any good
+    assert pick_prior(paths, ["X"], "normal") is None
