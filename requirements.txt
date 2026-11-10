@@ -1,7 +1,12 @@
-# Config files (app/config.yaml)
+# Config files (app/config.yaml, gaze/config.yaml)
 pyyaml>=6.0
 # D-Bus client for the KDE backend (pure Python, no system libs)
 jeepney>=0.9; sys_platform == "linux"
+
+# Gaze engine: face and iris landmarks. Pulls in numpy and opencv-contrib-python,
+# which we also use directly for the camera. Do not add a separate opencv-python:
+# two OpenCV packages in one environment overwrite each other's files.
+mediapipe>=0.10.14
 
 # Development
 pytest>=8.0

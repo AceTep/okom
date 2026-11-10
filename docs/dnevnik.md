@@ -87,3 +87,38 @@ Kronološki zapis važnih radnji i odluka. Najnovije na dnu.
 - Kašnjenje od uzorka koji je odlučio do prebacivanja fokusa: 107–142 ms. Od toga je 100 ms namjerno kašnjenje mocka, a ostatak je čekanje na takt slanja, odluka i KWin. Ukupno od pogleda do promjene fokusa ≈ 0,4 s dwella + 0,1 s + ~0,04 s.
 - Primijećeno je poznato ograničenje: korisnik je ručno kliknuo prozor na drugom ekranu. Pravilo "ne prebacuj ako si već tamo" ispravno nije napravilo ništa.
 - U log je dodano ime ekrana ciljnog prozora, jer prozori s istim naslovom nisu bili razlučivi.
+
+### Gaze engine, korak 1: kamera
+
+**Ovisnosti**
+- Dodan je `mediapipe` (1.2.2). On sam povlači `numpy` i `opencv-contrib-python` (5.0).
+- Svjesno **nije** dodan poseban `opencv-python`: dva OpenCV paketa u istom okruženju prepisuju si datoteke, a to je poznat izvor teško uhvatljivih grešaka. OpenCV koristimo izravno za kameru, ali preko paketa koji dolazi s MediaPipeom.
+
+**Model (`scripts/download_models.py`)**
+- `face_landmarker.task` (3,7 MB) preuzima se sa službenog MediaPipe servera. Verzija (`float16/1`) je zakucana u URL-u.
+- Nakon preuzimanja provjerava se SHA-256, a datoteka se preimenuje tek kad je provjera prošla, tako da prekinuto preuzimanje ne ostavi pokvarenu datoteku. Ponovno pokretanje preskače već ispravan model.
+- `models/` je u `.gitignore`.
+
+**Kamera (`gaze/camera.py`)**
+- Na demo laptopu su dva uređaja: `/dev/video0` je prava kamera, a `/dev/video1` je metapodatkovni čvor iste kamere i ne daje slike (provjereno).
+- Vrijeme snimanja `t` uzima se odmah nakon čitanja slike. Red slika u driveru postavljen je na 1, da se uvijek obrađuje svježa slika, a ne stara iz reda.
+- Dijagnostika `python -m gaze.camera` samo broji slike: ne sprema ih i ne prikazuje.
+
+**Mjerenje FPS-a (navečer, prigušeno svjetlo)**
+
+| Traženo | Dobiveno | FPS |
+| --- | --- | --- |
+| 640×480, zadani format | 640×480 YUYV | 15,0 |
+| 1280×720 MJPG | 1280×720 MJPG | 15,0–16,9 |
+| 1280×720, zadani format | 1280×720 YUYV | 10,0 |
+
+- Odabrano je **1280×720 MJPG**: više piksela na očima za isti FPS. Najdulja pauza između slika je 74 ms.
+- 15 FPS i u maloj rezoluciji upućuje na to da kamera zbog slabog svjetla sama produljuje ekspoziciju. Treba ponoviti mjerenje uz dobro svjetlo.
+- Za odluku na razini ekrana 15 FPS je dovoljno: u 0,4 s dwella stane oko 6 uzoraka.
+
+**Zajednički učitavač configa (`shared/config.py`)**
+- Strogo učitavanje YAML-a u dataclass premješteno je iz `app/config.py` u `shared/`, da ga `gaze/` koristi bez kopiranja koda i bez ovisnosti `gaze/` ↔ `app/`.
+- Tipovi se sad čitaju preko `typing.get_type_hints`, a ne po imenima, pa je robusnije. Dodatno se odbija `bool` umjesto `int` i `int` umjesto `bool`.
+- 64 testa prolaze.
+
+**README** opisuje što projekt radi, arhitekturu, stanje, postavljanje i pokretanje.

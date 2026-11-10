@@ -1,0 +1,8 @@
+# Gaze engine settings. Every value here has a matching field in gaze/config.py.
+
+camera:
+  device: 0         # /dev/video0 on Linux; /dev/video1 on the demo laptop is a metadata node
+  width: 1280
+  height: 720
+  fps: 30           # requested; the camera may deliver less in dim light
+  fourcc: MJPG      # MJPG allows 720p at full rate over USB; empty string = driver default
