@@ -5,7 +5,7 @@ Kronološki zapis važnih radnji i odluka. Najnovije na dnu.
 ## 10.11.2026.
 
 ### Repozitorij
-- Napravljen repozitorij na GitHubu (`AceTep/okom`). Glavna grana je `main`, a rad ide na granama `mateo/...`.
+- Napravljen repozitorij na GitHubu (`AceTep/okom`). Glavna grana je `main`, a rad ide na granama nazvanim po temi (npr. `screen-switch`), bez imena osoba, jer oboje radimo na svemu.
 - `.gitignore` izostavlja `data/` (snimke lica, kalibracije, logovi), `models/` (MediaPipe datoteke koje se preuzimaju skriptom) i `.venv/`.
 
 ### Podjela posla
@@ -328,3 +328,56 @@ Zaključci:
 - Dodavanje očiju glavi pri prijelazu između uvjeta šteti (96,3 % naspram 98,7 % i 99,8 %).
 - **Odluka za demo (spajanje 1):** zadani model je **prag na pitchu**. Najjednostavniji je, determinističan i najrobusniji na izmjerenim podacima. logreg ostaje kao opcija u configu.
 - **Oprez:** dva snimanja iste večeri, jedan korisnik koji puno pomiče glavu. Za korisnika koji pomiče samo oči prag na glavi bi bio lošiji, a upravo su oči osjetljive na naočale. To treba provjeriti na korisničkom testu.
+
+### Gaze engine, korak 4: `gaze/main.py`, kamera prebacuje fokus
+
+**Tok:** kamera → MediaPipe → značajke → One Euro zaglađivanje → model → UDP poruka. `app.main` ostaje nepromijenjen i ne zna razliku između kamere i mocka.
+
+**Odluke**
+- **Model se uči pri pokretanju** iz spremljene kalibracije. To traje manje od sekunde, pa nema zasebne datoteke modela koja bi mogla zastarjeti. Zadano se uzima najnovije snimanje, a `--condition normal` uzima najnovije s tim uvjetom, `--recording DIR` točno zadano.
+- **Zadani model je prag na pitchu** (vidi mjerenja s naočalama). `model.kind: logreg` je opcija.
+- **`conf` za prag** = sigmoid(udaljenost od praga / 2°). Na samom pragu je 0,5. To je ispod praga aplikacije (0,6), pa se odluka na samom rubu između ekrana namjerno ignorira. Pri 2° od praga `conf` je 0,73, a pri 6° 0,95.
+- **`screen = null`** kad je `conf < 0,55` ("nije siguran", prema protokolu) ili kad nema lica.
+- **One Euro filter** (Casiez i sur., 2012) na vektoru značajki: jako zaglađuje dok glava miruje, malo dok se brzo pomiče. Kad se lice izgubi na više od 0,5 s, filter kreće ispočetka. Ima prekidač `smoothing.enabled`, da se može mjeriti sa zaglađivanjem i bez njega.
+- `x` i `y` se zasad šalju kao sredina ekrana (0,5). Trebaju tek za prebacivanje po prozorima (spajanje 2).
+- Slanje UDP-a nikad ne zaustavlja engine. Greška se samo broji i zapiše u log jednom.
+
+**Proba (bez `app.main`, poruke je hvatao obični slušač)**
+- Prag naučen iz `normal`: −9,4°. Iz `naocale`: −8,5°. Na podacima za učenje oba daju 100 %.
+- 30 FPS, MediaPipe 13 ms po slici. U 6 s stiglo je 179 poruka, sve ispravne prema `shared/protocol.py`.
+- **Kašnjenje od snimanja slike do primanja poruke: medijan 12 ms, p95 19 ms.**
+- Postavka kamere je nakon Ctrl+C vraćena.
+
+97 testova prolazi. Novi testovi pokrivaju One Euro filter (uklanja šum, prati skok, kreće ispočetka nakon prekida), `conf` za prag (0,5 na pragu) i izgled poruke (nesiguran, bez lica, treptaj).
+
+**Prvi pravi demo: pogled prebacuje fokus** (Mateo, 10.11.2026. 21:09)
+- `app.main` i `gaze.main --condition normal`, uz OBS koji istovremeno snima kameru. Na svakom ekranu je bio po jedan VS Code prozor, u koji se tipkalo da se provjeri kamo ide fokus.
+- U 37 s bilo je 9 prebacivanja fokusa između ekrana, sva ispravna (potvrđeno tekstom utipkanim u prozor na svakom ekranu). Od uzorka koji je odlučio do prebacivanja prošlo je 13–26 ms.
+- 1 neuspjeh na kraju: `focus '' [HDMI-A-1] -> FAILED`. Ciljni prozor bez naslova nakon toga više nije postojao, pa je to bio privremeni prozor (dijalog koji se otvarao ili zatvarao). KWin ga nije htio aktivirati.
+
+**Dijeljenje kamere s OBS-om**
+- Preko V4L2 kameru može otvoriti samo jedan program: kad je OBS koristi, `gaze.main` javlja `cannot open camera 0`.
+- Rješenje: OBS (Flatpak) čita kameru preko PipeWirea, a naš program se pokreće kroz `pw-v4l2` (paket `pipewire-v4l2`), koji V4L2 pozive preusmjerava na PipeWire. Tada oba programa dijele kameru.
+- Rješenje s `v4l2loopback` odbačeno je jer je Secure Boot uključen, pa bi kernel modul trebalo potpisivati.
+- Ograničenje: svi korisnici dijeljene kamere dobivaju format koji je dogovorio prvi (OBS: **640×480 YUYV**). Uz to je izmjereno 30 FPS i MediaPipe 14–18 ms. Prag naučen na kalibraciji u 1280×720 radio je bez vidljivog pogoršanja, ali točnost u 640×480 nije posebno izmjerena.
+- `exposure_dynamic_framerate` je dok je OBS radio bio 0. Postavio ga je OBS, ne mi. Naš program vraća vrijednost koju je zatekao, pa je ne mijenja.
+
+### Dorade za demo
+
+**Rezerva kad aktivacija ne uspije** (`app/mapping.py`, `app/main.py`)
+- Kandidati su svi prozori na ciljnom ekranu, poredani od gornjeg prema donjem. Ako KWin odbije aktivirati prvi (npr. dijalog koji se upravo zatvara), pokušava se sljedeći, najviše 3 prozora.
+- Kašnjenje u logu sad se mjeri **nakon** uspješnog prebacivanja, a ne prije.
+- `GazeReceiver` se stvara prije backenda, pa zauzet port ne ostavlja otvoren backend.
+
+**Isticanje fokusiranog prozora**
+- Prvo je isproban vlastiti okvir kao Qt prozor preko cijelog ekrana (Tool, Frameless, StaysOnTop, WindowDoesNotAcceptFocus, TransparentForInput). **Na KWin Waylandu to ne radi:** prozor je pri otvaranju ukrao fokus, pao je ispod sljedećeg aktiviranog prozora, a KWin ga vidi kao normalan prozor, pa bi ga naša aplikacija mogla pokušati fokusirati. Sve je provjereno preko KWina.
+- **Odluka:** koristi se ugrađeni KWin efekt **"Dim Inactive"** (`diminactive`), koji zatamni sve prozore osim aktivnog. Nema crtanja i nema novih prozora.
+  - Efekt se uključuje preko D-Bus-a (`org.kde.KWin /Effects loadEffect`) samo dok `app.main` radi. Ne zapisuje se u korisnikove postavke (`kwinrc` ostaje nepromijenjen, provjereno).
+  - Na izlazu se isključuje **samo ako ga je uključio `app.main`**. Ako ga korisnik već koristi, ostaje kako je bio (provjereno).
+  - Isključuje se i na Ctrl+C i na `kill` (SIGTERM), provjereno. Nakon `kill -9` ostaje uključen do odjave ili do: `busctl --user call org.kde.KWin /Effects org.kde.kwin.Effects unloadEffect s diminactive`.
+  - Ima prekidač `highlight.dim_inactive` u `app/config.yaml`. Kod je u KDE backendu (`start_highlight` / `stop_highlight`). Na drugim platformama zasad nema isticanja.
+- Vlastiti okvir ostaje ideja za platforme bez takvog efekta.
+
+**Ideja za budućnost (Mateo):** zbog privatnosti bi dok OKOM radi samo on smio koristiti kameru, da nitko drugi ne može snimati korisnika sa strane. Tijekom razvoja to nije potrebno: sad se kamera namjerno dijeli s OBS-om preko `pw-v4l2`. U radu ide pod buduće značajke, kao prekidač u konfiguraciji.
+
+99 testova prolazi.

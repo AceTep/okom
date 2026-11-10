@@ -139,3 +139,61 @@ def leave_one_point_out(data: Dataset, factory: Callable[[], object]) -> np.ndar
 
 def train_test(train: Dataset, test: Dataset, factory: Callable[[], object]) -> np.ndarray:
     return factory().fit(train.x, train.screen).predict(test.x)
+
+
+def threshold_proba(model: ThresholdClassifier, x: np.ndarray, softness: float) -> np.ndarray:
+    """Class probabilities for the threshold model: 0.5 on the threshold, -> 1 away from it.
+
+    p(lo) = sigmoid(signed distance / softness), where the sign points to lo's side.
+    """
+    distance = (model.threshold_ - x[:, 0]) if model.below_is_lo_ else (x[:, 0] - model.threshold_)
+    p_lo = 1.0 / (1.0 + np.exp(-distance / softness))
+    return np.column_stack([p_lo, 1.0 - p_lo])
+
+
+class ScreenPredictor:
+    """A trained screen model applied to one Features vector at a time."""
+
+    def __init__(self, kind: str, names: tuple[str, ...], model, softness: float) -> None:
+        self.kind = kind
+        self.names = names
+        self.model = model
+        self.softness = softness
+        self._cols = [FEATURE_NAMES.index(n) for n in names]
+
+    @property
+    def classes(self) -> np.ndarray:
+        return self.model.classes_
+
+    def predict(self, vector: np.ndarray) -> tuple[int, float]:
+        """(screen, confidence) for a full feature vector (FEATURE_NAMES order)."""
+        x = np.asarray(vector, dtype=np.float64)[self._cols].reshape(1, -1)
+        if isinstance(self.model, ThresholdClassifier):
+            proba = threshold_proba(self.model, x, self.softness)[0]
+        else:
+            proba = self.model.predict_proba(x)[0]
+        best = int(np.argmax(proba))
+        return int(self.classes[best]), float(proba[best])
+
+
+def train_predictor(
+    recording: Recording, kind: str, feature_set: str, blink_threshold: float, softness: float
+) -> tuple[ScreenPredictor, Dataset]:
+    if kind == "threshold":
+        names: tuple[str, ...] = ("pitch",)
+        model = ThresholdClassifier()
+    elif kind == "logreg":
+        if feature_set not in FEATURE_SETS:
+            raise ValueError(
+                f"unknown feature set {feature_set!r}, choose from {list(FEATURE_SETS)}"
+            )
+        names = FEATURE_SETS[feature_set]
+        model = make_logreg()
+    else:
+        raise ValueError(f"unknown model kind {kind!r}, choose threshold or logreg")
+    data = build_dataset([recording], names, blink_threshold)
+    problem = coverage_problem(data)
+    if problem:
+        raise ValueError(f"{recording.path.name}: {problem}")
+    model.fit(data.x, data.screen)
+    return ScreenPredictor(kind, names, model, softness), data

@@ -45,11 +45,36 @@ class CalibrationConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class UdpConfig:
+    host: str
+    port: int
+
+
+@dataclass(frozen=True, slots=True)
+class ModelConfig:
+    kind: str
+    feature_set: str
+    softness_deg: float
+    unsure_below: float
+
+
+@dataclass(frozen=True, slots=True)
+class SmoothingConfig:
+    enabled: bool
+    min_cutoff_hz: float
+    beta: float
+    d_cutoff_hz: float
+
+
+@dataclass(frozen=True, slots=True)
 class GazeConfig:
     camera: CameraConfig
     landmarks: LandmarksConfig
     features: FeaturesConfig
     calibration: CalibrationConfig
+    udp: UdpConfig
+    model: ModelConfig
+    smoothing: SmoothingConfig
 
 
 def load_config(path: Path | str = DEFAULT_PATH) -> GazeConfig:

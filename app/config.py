@@ -25,6 +25,11 @@ class DecisionConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class HighlightConfig:
+    dim_inactive: bool
+
+
+@dataclass(frozen=True, slots=True)
 class MockGazeConfig:
     rate_hz: float
     noise_cm: float
@@ -37,6 +42,7 @@ class MockGazeConfig:
 class AppConfig:
     udp: UdpConfig
     decision: DecisionConfig
+    highlight: HighlightConfig
     mock_gaze: MockGazeConfig
 
 

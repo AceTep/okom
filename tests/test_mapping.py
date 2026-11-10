@@ -38,3 +38,44 @@ def test_screen_of_active() -> None:
     windows = [win("code", "HDMI-A-1", 6), win("firefox", "eDP-1", 5, active=True)]
     assert screen_of_active(SCREENS, windows) == 1
     assert screen_of_active(SCREENS, [win("code", "HDMI-A-1", 6)]) is None
+
+
+def test_candidates_topmost_first() -> None:
+    from app.mapping import focus_candidates
+
+    windows = [
+        win("code", "HDMI-A-1", 6, active=True),
+        win("chat", "eDP-1", 2),
+        win("firefox", "eDP-1", 5),
+    ]
+    assert [w.id for w in focus_candidates(SCREENS, windows, 1)] == ["firefox", "chat"]
+    assert focus_candidates(SCREENS, windows, 0) == []  # already focused there
+
+
+def test_switch_falls_back_to_next_window() -> None:
+    from app.backends.base import FocusBackend
+    from app.main import switch_to
+    from shared.protocol import GazeMessage
+
+    class Backend(FocusBackend):
+        def __init__(self) -> None:
+            self.tried: list[str] = []
+
+        def list_screens(self):
+            return SCREENS
+
+        def list_windows(self):
+            return [
+                win("code", "HDMI-A-1", 6, active=True),
+                win("closing-dialog", "eDP-1", 9),
+                win("firefox", "eDP-1", 5),
+            ]
+
+        def focus(self, window_id: str) -> bool:
+            self.tried.append(window_id)
+            return window_id != "closing-dialog"
+
+    msg = GazeMessage(t=0.0, face=True, users=1, screen=1, x=0.5, y=0.5, conf=0.9, blink=False)
+    backend = Backend()
+    assert switch_to(backend, 1, msg) is True
+    assert backend.tried == ["closing-dialog", "firefox"]

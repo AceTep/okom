@@ -27,8 +27,9 @@ Dok gaze engine nije gotov, `app/mock_gaze.py` šalje iste poruke, a pogled glum
 | Odluka o prebacivanju između ekrana + lažni pogled mišem | gotovo, ručno isprobano |
 | Kamera, značajke lica (poza glave, šarenica) | gotovo |
 | Vodič preko cijelog ekrana (točke za kalibraciju) | gotovo |
-| Kalibracija, model za ekran, mjerenje točnosti | gotovo, čeka prvo pravo snimanje |
-| Slanje pogleda aplikaciji (`gaze/main.py`) | nije počelo |
+| Kalibracija, model za ekran, mjerenje točnosti | gotovo (99,8 % po slici, i s naočalama) |
+| Prebacivanje ekrana pogledom, kamera → aplikacija (`gaze/main.py`) | gotovo |
+| Prebacivanje po prozorima (točka pogleda) | nije počelo |
 | Windows, Hyprland, Sway, GNOME | nije počelo |
 
 Detaljan zapis odluka i mjerenja je u [`docs/dnevnik.md`](docs/dnevnik.md).
@@ -48,7 +49,19 @@ python scripts/download_models.py  # MediaPipe model u models/
 
 Okruženje mora biti aktivno (`source .venv/bin/activate`) u svakom terminalu.
 
-**Prebacivanje ekrana mišem umjesto pogleda**, u dva terminala:
+**Prebacivanje ekrana pogledom**: prvo jednom kalibracija, zatim dva terminala:
+
+```bash
+python -m gaze.calibration --condition normal   # jednom: prati točku po oba ekrana
+python -m app.main                              # terminal 1: aplikacija
+python -m gaze.main --condition normal          # terminal 2: kamera
+```
+
+Pogledaj drugi ekran i zadrži pogled oko pola sekunde. Fokus prelazi na gornji prozor na tom ekranu. Na KDE-u su dok `app.main` radi svi ostali prozori zatamnjeni, da se vidi koji ima fokus.
+
+Ako OBS istovremeno koristi kameru, pokreni `gaze` kroz PipeWire: `pw-v4l2 python -m gaze.main --condition normal` (paket `pipewire-v4l2`).
+
+**Isto bez kamere, miš glumi pogled**, u dva terminala:
 
 ```bash
 python -m app.main        # aplikacija
@@ -57,11 +70,10 @@ python -m app.mock_gaze   # lažni pogled
 
 Pomakni miš na drugi ekran i zadrži ga tamo oko pola sekunde. Fokus prelazi na gornji prozor na tom ekranu.
 
-**Kalibracija i točnost:**
+**Točnost:**
 
 ```bash
-python -m gaze.calibration --condition normal   # prati točku, snimanje ide u data/calibration/
-python -m eval.screen_accuracy                  # točnost na svim snimanjima
+python -m eval.screen_accuracy        # točnost na svim snimanjima iz data/calibration/
 ```
 
 **Provjere:**
@@ -78,8 +90,8 @@ ruff check . && ruff format .        # lint i format
 
 ## Postavke
 
-- `app/config.yaml`: dwell, pauza, prag pouzdanosti, port, parametri lažnog pogleda.
-- `gaze/config.yaml`: kamera, MediaPipe, prag treptaja, mreža i trajanje točaka.
+- `app/config.yaml`: dwell, pauza, prag pouzdanosti, port, isticanje fokusiranog prozora, parametri lažnog pogleda.
+- `gaze/config.yaml`: kamera, MediaPipe, prag treptaja, mreža i trajanje točaka, model, zaglađivanje.
 
 Nepoznat ili nedostajući ključ u konfiguraciji je greška, pa se tipfeler odmah vidi.
 

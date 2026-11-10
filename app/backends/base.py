@@ -78,6 +78,13 @@ class FocusBackend(ABC):
         """Screens and windows together; backends may do this in one query."""
         return self.list_screens(), self.list_windows()
 
+    def start_highlight(self) -> bool:
+        """Make the focused window stand out. Returns False if the platform cannot."""
+        return False
+
+    def stop_highlight(self) -> None:  # noqa: B027 - optional hook
+        """Undo start_highlight(), leaving the desktop as it was before."""
+
     def open_cursor_stream(self, interval_ms: int = 33) -> CursorStream | None:
         """Mouse position stream, or None if the platform does not support it."""
         return None

@@ -36,6 +36,10 @@ from app.backends.base import CursorStream, FocusBackend, Rect, Screen, Window, 
 log = logging.getLogger(__name__)
 
 _SCRIPTING = DBusAddress("/Scripting", bus_name="org.kde.KWin", interface="org.kde.kwin.Scripting")
+_EFFECTS = DBusAddress("/Effects", bus_name="org.kde.KWin", interface="org.kde.kwin.Effects")
+# Built-in KWin effect that dims every window except the active one. Loaded at
+# runtime only (not saved in the user's settings), so unloading restores the desktop.
+_HIGHLIGHT_EFFECT = "diminactive"
 _REPLY_PATH = "/okom"
 _REPLY_IFACE = "okom.Bridge"
 _CURSOR_PLUGIN = "okom_cursor"
@@ -97,9 +101,39 @@ class KdeWaylandBackend(FocusBackend):
     def __init__(self, timeout: float = 1.0) -> None:
         self._timeout = timeout
         self._conn: DBusConnection = open_dbus_connection(bus="SESSION")
+        self._loaded_highlight = False
 
     def close(self) -> None:
+        self.stop_highlight()
         self._conn.close()
+
+    def start_highlight(self) -> bool:
+        """Turn on KWin's "Dim Inactive" effect unless the user already has it on."""
+        try:
+            if self._effect("isEffectLoaded")[0]:
+                log.info("highlight: %s already on, leaving it as it is", _HIGHLIGHT_EFFECT)
+                return True
+            ok = self._effect("loadEffect")[0]
+        except (RuntimeError, TimeoutError) as exc:
+            log.warning("highlight: cannot load %s: %s", _HIGHLIGHT_EFFECT, exc)
+            return False
+        self._loaded_highlight = bool(ok)
+        log.info("highlight: %s %s", _HIGHLIGHT_EFFECT, "on" if ok else "could not be loaded")
+        return bool(ok)
+
+    def stop_highlight(self) -> None:
+        """Turn the effect off again, but only if start_highlight() turned it on."""
+        if not self._loaded_highlight:
+            return
+        self._loaded_highlight = False
+        try:
+            self._effect("unloadEffect")
+            log.info("highlight: %s off", _HIGHLIGHT_EFFECT)
+        except (RuntimeError, TimeoutError) as exc:
+            log.warning("highlight: cannot unload %s: %s", _HIGHLIGHT_EFFECT, exc)
+
+    def _effect(self, method: str) -> tuple:
+        return _call(self._conn, _EFFECTS, method, "s", (_HIGHLIGHT_EFFECT,), self._timeout)
 
     def list_screens(self) -> list[Screen]:
         return self.snapshot()[0]

@@ -26,3 +26,19 @@ calibration:
   countdown_s: 3.0    # before each screen
   settle_s: 0.4       # after the dot moves; eyes need time to get there, not recorded
   record_s: 0.6       # recorded per point
+
+udp:
+  host: 127.0.0.1
+  port: 5555
+
+model:
+  kind: threshold     # threshold (one threshold on head pitch) | logreg
+  feature_set: head   # logreg only: head | eyes | head+eyes | head+eyes+posture
+  softness_deg: 2.0   # threshold only: confidence = sigmoid(distance from threshold / softness)
+  unsure_below: 0.55  # send screen = null when the confidence is lower
+
+smoothing:
+  enabled: true       # One Euro filter on the features before the model
+  min_cutoff_hz: 1.0  # smoothing while steady (lower = smoother, more lag)
+  beta: 0.05          # how fast the cutoff rises with speed (higher = less lag when moving)
+  d_cutoff_hz: 1.0
