@@ -73,3 +73,15 @@ def test_quality_in_calibration_info(tmp_path) -> None:
     assert describe_quality(info.quality) == ("unusable", "#d33")
     assert describe_quality({"verdict": "good", "accuracy": 0.996})[0] == "quality 99.6 %"
     assert describe_quality(None) == ("quality not measured", "")
+
+
+def test_known_conditions(tmp_path) -> None:
+    from okom.commands import PRESET_CONDITIONS, known_conditions
+
+    write_recording(tmp_path, "20261110-205000_naocale", "2026-11-10T20:50:00", "naocale")
+    write_recording(tmp_path, "20261110-204709_normal", "2026-11-10T20:47:09", "normal")
+    (tmp_path / "20261111-000000_broken").mkdir()  # no meta.json: not offered
+    names = known_conditions(tmp_path)
+    assert names[: len(PRESET_CONDITIONS)] == list(PRESET_CONDITIONS)
+    assert names[len(PRESET_CONDITIONS) :] == ["naocale"]  # recorded, not a duplicate preset
+    assert known_conditions(tmp_path / "missing") == list(PRESET_CONDITIONS)

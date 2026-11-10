@@ -29,10 +29,10 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMenu,
     QPlainTextEdit,
     QPushButton,
@@ -50,6 +50,7 @@ from okom.commands import (
     can_share_camera,
     describe_age,
     describe_quality,
+    known_conditions,
     latest_calibration,
     start_commands,
 )
@@ -112,12 +113,17 @@ class Launcher(QWidget):
             grid.addWidget(widget, r, 1)
         grid.setColumnStretch(1, 1)  # values right next to their labels
 
-        self.condition = QLineEdit("normal")
+        self.condition = QComboBox()
+        self.condition.setEditable(True)  # pick a preset or type a new label
+        self.condition.addItems(known_conditions())
+        self.condition.setCurrentText("normal")
         self.condition.setValidator(
             QRegularExpressionValidator(QRegularExpression("[a-z0-9_-]{0,32}"))
         )
-        self.condition.setToolTip("Label of the conditions, e.g. normal, glasses, dim")
-        self.condition.textChanged.connect(self.refresh)
+        self.condition.setToolTip(
+            "Conditions of the calibration: pick one or type a new label (a-z, 0-9, _ -)"
+        )
+        self.condition.currentTextChanged.connect(self.refresh)
         self.share_camera = QCheckBox("Share camera (OBS)")
         self.share_camera.setToolTip(
             "Run the camera through PipeWire (pw-v4l2), so OBS can record it"
@@ -235,7 +241,7 @@ class Launcher(QWidget):
         )
 
     def refresh(self) -> None:
-        condition = self.condition.text()
+        condition = self.condition.currentText()
         self.calibration = latest_calibration(condition) if condition else None
         if not condition:
             self.calibration_label.setText(f"{BAD} enter a condition")
@@ -280,7 +286,7 @@ class Launcher(QWidget):
     def calibrate(self) -> None:
         self._calibration_before = self.calibration.path if self.calibration else None
         self._mode = "calibrating"
-        self._run(calibrate_command(self.condition.text(), self.share_camera.isChecked()))
+        self._run(calibrate_command(self.condition.currentText(), self.share_camera.isChecked()))
         self.refresh()
 
     def start_or_stop(self) -> None:
@@ -290,7 +296,7 @@ class Launcher(QWidget):
         if self._mode != "idle" or not self.start_btn.isEnabled():
             return
         self._mode = "running"
-        for cmd in start_commands(self.condition.text(), self.share_camera.isChecked()):
+        for cmd in start_commands(self.condition.currentText(), self.share_camera.isChecked()):
             self._run(cmd)
         self.refresh()
 
@@ -342,6 +348,7 @@ class Launcher(QWidget):
             if code != 0:
                 self._error(f"Calibration failed (exit code {code}), see the log.")
                 return
+            self._refresh_conditions()
             self.refresh()
             self._report_calibration()
             return
@@ -353,6 +360,14 @@ class Launcher(QWidget):
         elif self._mode == "stopping" and not self._procs:
             self._mode = "idle"
         self.refresh()
+
+    def _refresh_conditions(self) -> None:
+        current = self.condition.currentText()
+        self.condition.blockSignals(True)
+        self.condition.clear()
+        self.condition.addItems(known_conditions())
+        self.condition.setCurrentText(current)
+        self.condition.blockSignals(False)
 
     def _report_calibration(self) -> None:
         """Tell the user right away whether the calibration just made is any good."""

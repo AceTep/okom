@@ -510,3 +510,10 @@ Treće snimanje je primjetno slabije od prvog u istim uvjetima: donji red monito
 - S kamerom i prethodnim modelom: tijekom dijela za laptop provjera je uhvatila pogled na monitor ("looking at screen 0 instead of 1"). Točka je čekala 1,6 s i nastavila kad je korisnik pogledao laptop. Kvaliteta skraćene kalibracije bila je 98,3 %.
 
 122 testa prolaze.
+
+### Uvjet kalibracije kao padajući izbornik
+
+- Polje za uvjet u launcheru je sad padajući izbornik u koji se može i pisati. Nudi unaprijed zadane uvjete (`normal`, `glasses`, `dim`, `bright`, `posture`) i sve uvjete koji već postoje u snimanjima (npr. `naocale`). Može se upisati i nova oznaka (mala slova, brojke, `_`, `-`). Nova oznaka se nakon kalibracije pojavljuje na popisu.
+- Unaprijed zadani uvjeti su u `okom/commands.py` (`PRESET_CONDITIONS`).
+
+123 testa prolaze.

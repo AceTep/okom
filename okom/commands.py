@@ -14,6 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CALIBRATION_DIR = REPO_ROOT / "data" / "calibration"
 MODEL_FILE = REPO_ROOT / "models" / "face_landmarker.task"
 CONDITION_RE = re.compile(r"[a-z0-9_-]{1,32}")
+# Offered in the launcher; any other label can still be typed (e.g. "classroom").
+PRESET_CONDITIONS = ("normal", "glasses", "dim", "bright", "posture")
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,3 +107,14 @@ def describe_quality(quality: dict | None) -> tuple[str, str]:
     accuracy = quality.get("accuracy")
     short = f"quality {100 * accuracy:.1f} %" if accuracy is not None else "unusable"
     return short, QUALITY_COLOR.get(verdict, "")
+
+
+def known_conditions(data_dir: Path = CALIBRATION_DIR) -> list[str]:
+    """Presets first, then every other condition that already has a recording."""
+    recorded = set()
+    if data_dir.exists():
+        for path in data_dir.iterdir():
+            _, _, condition = path.name.partition("_")
+            if CONDITION_RE.fullmatch(condition) and (path / "meta.json").exists():
+                recorded.add(condition)
+    return list(PRESET_CONDITIONS) + sorted(recorded - set(PRESET_CONDITIONS))
