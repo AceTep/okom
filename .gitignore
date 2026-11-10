@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Never commit: face recordings, calibration data, logs
+data/
+
+# MediaPipe .task files (downloaded by scripts/download_models.py)
+models/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
