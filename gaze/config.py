@@ -35,10 +35,21 @@ class FeaturesConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class CalibrationConfig:
+    grid_cols: int
+    grid_rows: int
+    margin: float
+    countdown_s: float
+    settle_s: float
+    record_s: float
+
+
+@dataclass(frozen=True, slots=True)
 class GazeConfig:
     camera: CameraConfig
     landmarks: LandmarksConfig
     features: FeaturesConfig
+    calibration: CalibrationConfig
 
 
 def load_config(path: Path | str = DEFAULT_PATH) -> GazeConfig:

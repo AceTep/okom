@@ -8,6 +8,11 @@ jeepney>=0.9; sys_platform == "linux"
 # two OpenCV packages in one environment overwrite each other's files.
 mediapipe>=0.10.14
 
+# Fullscreen calibration overlay on a chosen screen (works natively on Wayland).
+# Pinned: 6.12.0 decrements the refcount of None on every void call, which crashes
+# Python 3.11 after a few seconds of painting (measured, see docs/dnevnik.md).
+PySide6-Essentials==6.11.3
+
 # Development
 pytest>=8.0
 ruff>=0.6

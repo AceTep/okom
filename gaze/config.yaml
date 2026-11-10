@@ -18,3 +18,11 @@ landmarks:
 
 features:
   blink_threshold: 0.5            # eyeBlink blendshape at or above this = blinking
+
+calibration:
+  grid_cols: 5        # points per screen: grid_cols x grid_rows
+  grid_rows: 3
+  margin: 0.08        # outer points' distance from the screen edge, fraction of the screen
+  countdown_s: 3.0    # before each screen
+  settle_s: 0.4       # after the dot moves; eyes need time to get there, not recorded
+  record_s: 0.6       # recorded per point

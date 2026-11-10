@@ -211,3 +211,48 @@ Zaključci:
 - Kad korisnik gleda dolje, `blink` raste, ali ostaje daleko od praga 0,5, pa nema lažnih treptaja.
 - MediaPipeovi blendshapeovi za smjer pogleda (`eyeLookUp/Down`) gotovo ne razlikuju ekrane.
 - d′ je ovdje vjerojatno optimističan: jedno kratko snimanje, a susjedne slike su jako slične. Pouzdan broj točnosti dat će kalibracija s točkama i provjera na odvojenom snimanju.
+
+### Gaze engine, korak 3a: vodič preko cijelog ekrana
+
+**Provjera prije gradnje:** zna li Qt na KDE Waylandu otvoriti prozor preko cijelog ekrana na zadanom ekranu i vidi li ekrane jednako kao KWin?
+- Qt (platforma `wayland`) daje iste ekrane i koordinate kao KWin: 0 = HDMI-A-1 (0,0), 1 = eDP-1 (0,1080).
+- Prozor otvoren preko cijelog ekrana na svakom ekranu provjeren je preko KWina, ne preko Qt-a. Oba su završila na traženom ekranu.
+
+**Kako radi**
+- `gaze/targets.py` (čista logika, 5 testova):
+  - Mreža 5×3 točke po ekranu, s rubom od 8 %. Točke se obilaze zmijasto (red po red, naizmjeničnim smjerom), da pogled ne skače preko cijelog ekrana.
+  - Raspored je izračunat unaprijed od trenutka početka: odbrojavanje 3 s, zatim za svaku točku 0,4 s smirivanja (oči putuju, ne snima se) i 0,6 s snimanja.
+  - Uzorci se pridružuju točki po **vremenu snimanja slike**, a ne po vremenu obrade, pa kašnjenje MediaPipea ne kvari oznake.
+- `gaze/overlay.py` (PySide6):
+  - Ekran koji treba gledati ima osvijetljenu pozadinu, plavi rub, odbrojavanje u kutu i točku. Ostali ekrani su crni s uputom.
+  - Dok se oči smiruju, oko točke je prsten koji se smanjuje. Kad prsten nestane i točka postane puna, snima se.
+  - Kursor je skriven. Esc ili Ctrl+C prekida.
+- `gaze/session.py`:
+  - Kamera i MediaPipe rade u zasebnoj niti, jer Qt zauzima glavnu nit.
+  - Vodič kreće tek kad kamera stvarno daje slike. Ako kamera zakaže usred rada, vodič se zaustavlja.
+- `python -m gaze.feature_probe --compare` sad koristi ovaj vodič na svim ekranima.
+- Postavke su u `gaze/config.yaml`, odjeljak `calibration`.
+
+**Proba (skraćena mreža 2×1, bez gledanja):**
+- Proba je došla do kraja i snimala je 30,1 uzorak u sekundi.
+- Označeno je 59 uzoraka, a očekivano je 4 točke × 0,5 s × 30 = 60.
+- KWin je vidio prozore na ispravnim ekranima, a postavka kamere je vraćena.
+
+**Pronađena greška u PySide6 6.12.0**
+- Simptom: `feature_probe --compare` se rušio (segmentation fault, `Fatal Python error: none_dealloc`) i kad bi se prekinuo i kad bi došao do kraja. Prva proba je prošla samo slučajno.
+- Dijagnoza:
+  - `coredumpctl` je pokazao pad unutar Qt crtanja.
+  - `faulthandler` je pokazao `paintEvent` i poruku "deallocating None: bug likely caused by a refcount error in a C extension".
+  - Mjereno crtanjem u memoriju, bez prozora: u PySide6 6.12.0 **svaki poziv Qt funkcije koja ne vraća vrijednost smanji brojač referenci na `None` za 1** (`fillRect`, `setPen`, `drawRect`, `drawEllipse`... −1000 na 1000 poziva). Uz 60 osvježavanja u sekundi brojač padne na nulu za nekoliko sekundi.
+  - U Pythonu 3.12+ `None` je "besmrtan" i greška se ne vidi. Mi koristimo 3.11 zbog MediaPipea, pa nas pogađa.
+- Provjereno: 6.11.3 i 6.10.3 nemaju grešku (brojač stalan, +17, ne raste s brojem poziva).
+- **Odluka:** `PySide6-Essentials==6.11.3`, zakucano u `requirements.txt` uz obrazloženje. `Essentials` sadrži samo osnovne Qt module i zauzima ~244 MB (procjena prije mjerenja bila je ~100 MB).
+- Nakon zamjene sva tri načina završetka rade uredno: normalni kraj, prekid iz koda jer kamera ne radi, i Ctrl+C. Postavka kamere se svaki put vraća.
+
+**Pouka (druga danas):** jedna uspješna proba nije dokaz. Prekid i normalni kraj treba isprobati namjerno i više puta. Ovdje je to otkrilo grešku koja bi se inače pojavila usred demoa.
+
+**Prvo pravo snimanje s vodičem** (Mateo, bez naočala, 5×3 točke po ekranu)
+- 540 označenih uzoraka (očekivano 2 × 15 × 0,6 s × 30 = 540), nijedan bez lica, 1 treptaj.
+- Razlike prosjeka: pitch −21,9° naspram −5,8° (16°), iris_v −0,10 naspram −0,04.
+- d′ je pao na 2,1–2,5 (prije 7,7). To nije pogoršanje: točke sad pokrivaju cijeli ekran, pa je raspršenje unutar jednog ekrana veliko (vrh i dno istog ekrana). d′ preko cijelog ekrana zato ne predviđa točnost. Ono što odlučuje je preklapanje donjeg reda monitora i gornjeg reda laptopa, a to mjeri model u koraku 3b.
+- Ponovno se vidi naginjanje prema laptopu (eye_distance_px 98 → 109, head_z −39,8 → −37,6 cm). Kod ovog korisnika je dosljedno, ali je to navika, a ne pogled.

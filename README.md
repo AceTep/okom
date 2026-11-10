@@ -25,8 +25,9 @@ Dok gaze engine nije gotov, `app/mock_gaze.py` šalje iste poruke, a pogled glum
 | Protokol poruke | gotovo |
 | Prebacivanje fokusa na KDE Plasma 6 (Wayland i X11) | gotovo |
 | Odluka o prebacivanju između ekrana + lažni pogled mišem | gotovo, ručno isprobano |
-| Kamera | gotovo |
-| Značajke lica, kalibracija, model | u izradi |
+| Kamera, značajke lica (poza glave, šarenica) | gotovo |
+| Vodič preko cijelog ekrana (točke za kalibraciju) | gotovo |
+| Kalibracija i model za ekran | u izradi |
 | Windows, Hyprland, Sway, GNOME | nije počelo |
 
 Detaljan zapis odluka i mjerenja je u [`docs/dnevnik.md`](docs/dnevnik.md).
@@ -61,6 +62,8 @@ Pomakni miš na drugi ekran i zadrži ga tamo oko pola sekunde. Fokus prelazi na
 python -m app.backends.detect        # koji je backend odabran i vidi li prozore
 python -m app.backends.kde_wayland   # popis ekrana i prozora
 python -m gaze.camera                # otvara kameru i mjeri FPS, ne sprema slike
+python -m gaze.feature_probe         # značajke uživo u terminalu
+python -m gaze.feature_probe --compare  # prati točku po ekranima, usporedi značajke
 pytest                               # testovi
 ruff check . && ruff format .        # lint i format
 ```
@@ -68,7 +71,7 @@ ruff check . && ruff format .        # lint i format
 ## Postavke
 
 - `app/config.yaml`: dwell, pauza, prag pouzdanosti, port, parametri lažnog pogleda.
-- `gaze/config.yaml`: kamera.
+- `gaze/config.yaml`: kamera, MediaPipe, prag treptaja, mreža i trajanje točaka.
 
 Nepoznat ili nedostajući ključ u konfiguraciji je greška, pa se tipfeler odmah vidi.
 

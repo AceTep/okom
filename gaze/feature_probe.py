@@ -4,8 +4,8 @@ Live readout (twice a second), no images are saved or shown:
 
     python -m gaze.feature_probe
 
-Guided comparison: look at the monitor, then at the laptop, and get per-feature
-means and the separation d' between the two:
+Guided comparison on a fullscreen overlay: follow the dot over every screen,
+then get per-feature means and the separation d' between screen 0 and 1:
 
     python -m gaze.feature_probe --compare
 """
@@ -59,46 +59,43 @@ def live(cfg: GazeConfig, cam: Camera, det: LandmarkDetector) -> None:
         )  # fmt: skip
 
 
-def collect(
-    cfg: GazeConfig, cam: Camera, det: LandmarkDetector, label: str, seconds: float
-) -> np.ndarray:
-    for n in (3, 2, 1):
-        log.info(">>> Look at the %s, starting in %d ...", label, n)
-        time.sleep(1)
-    log.info(">>> Recording %s for %.0f s, keep looking, move your eyes around it", label, seconds)
-    rows, no_face, blinks = [], 0, 0
-    end = time.monotonic() + seconds
-    while time.monotonic() < end:
-        frame = cam.read()
-        if frame is None:
-            continue
-        face = primary_face(det.detect(frame))
-        if face is None:
+def compare(cfg: GazeConfig) -> None:
+    """Guided test on the fullscreen overlay: every calibration point on every screen."""
+    from gaze.session import run_session
+    from gaze.targets import label_samples
+
+    result = run_session(cfg)
+    if not result.completed:
+        log.error("aborted, nothing to compare")
+        return
+    labelled = label_samples(result.timeline, ((s.t, s) for s in result.samples))
+    by_screen: dict[int, list[np.ndarray]] = {}
+    no_face = blinks = 0
+    for target, sample in labelled:
+        if sample.features is None:
             no_face += 1
-            continue
-        f = extract(face)
-        if is_blinking(f, cfg.features.blink_threshold):
+        elif is_blinking(sample.features, cfg.features.blink_threshold):
             blinks += 1
-            continue
-        rows.append(f.vector())
+        else:
+            by_screen.setdefault(target.screen, []).append(sample.features.vector())
     log.info(
-        "%s: %d samples (%d without a face, %d blinking skipped)", label, len(rows), no_face, blinks
-    )
-    return np.array(rows)
-
-
-def compare(cfg: GazeConfig, cam: Camera, det: LandmarkDetector, seconds: float) -> None:
-    monitor = collect(cfg, cam, det, "MONITOR (top)", seconds)
-    laptop = collect(cfg, cam, det, "LAPTOP (bottom)", seconds)
-    if len(monitor) < 5 or len(laptop) < 5:
+        "%d labelled samples, %d without a face, %d blinking (both skipped)",
+        len(labelled), no_face, blinks,
+    )  # fmt: skip
+    for screen, rows in sorted(by_screen.items()):
+        log.info("screen %d (%s): %d samples", screen, result.screens[screen][0], len(rows))
+    if len(by_screen) < 2 or min(len(r) for r in by_screen.values()) < 5:
         log.error("not enough samples with a face, check lighting and camera position")
         return
-    d = separation(monitor, laptop)
-    log.info("%-16s %10s %10s %8s", "feature", "monitor", "laptop", "d'")
+    if len(by_screen) > 2:
+        log.warning("more than two screens, comparing only screen 0 and screen 1")
+    a, b = np.array(by_screen[0]), np.array(by_screen[1])
+    d = separation(a, b)
+    log.info("%-16s %10s %10s %8s", "feature", "screen 0", "screen 1", "d'")
     for i in np.argsort(-d):
         log.info(
             "%-16s %+10.3f %+10.3f %8.1f",
-            FEATURE_NAMES[i], monitor[:, i].mean(), laptop[:, i].mean(), d[i],
+            FEATURE_NAMES[i], a[:, i].mean(), b[:, i].mean(), d[i],
         )  # fmt: skip
     log.info("d' > 2 separates well, > 4 very well (rows sorted by d')")
 
@@ -106,17 +103,16 @@ def compare(cfg: GazeConfig, cam: Camera, det: LandmarkDetector, seconds: float)
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
     parser = argparse.ArgumentParser(description="Inspect gaze features from the camera.")
-    parser.add_argument("--compare", action="store_true", help="guided monitor vs laptop test")
-    parser.add_argument("--seconds", type=float, default=5.0, help="recording time per screen")
+    parser.add_argument("--compare", action="store_true", help="guided test on all screens")
     args = parser.parse_args()
 
     cfg = load_config()
+    if args.compare:
+        compare(cfg)
+        return
     with Camera(cfg.camera) as cam, LandmarkDetector(cfg.landmarks) as det:
         try:
-            if args.compare:
-                compare(cfg, cam, det, args.seconds)
-            else:
-                live(cfg, cam, det)
+            live(cfg, cam, det)
         except KeyboardInterrupt:
             pass
 
