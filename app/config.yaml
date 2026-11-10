@@ -1,0 +1,18 @@
+# Application settings. Every value here has a matching field in app/config.py.
+
+udp:
+  host: 127.0.0.1
+  port: 5555
+
+decision:
+  dwell_s: 0.4      # gaze must stay on a new screen this long before switching
+  cooldown_s: 0.8   # no new switch this soon after the previous one
+  min_conf: 0.6     # samples below this confidence are ignored
+  max_gap_s: 0.5    # a longer gap between usable samples restarts the dwell
+
+mock_gaze:
+  rate_hz: 30       # messages per second, like the real engine
+  noise_cm: 4.0     # standard deviation of the added gaze noise
+  px_per_cm: 40.0   # rough pixel density used to convert noise_cm to pixels
+  delay_s: 0.1      # simulated camera + processing latency
+  conf: 0.9         # confidence reported in every message
