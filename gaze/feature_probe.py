@@ -22,6 +22,7 @@ from gaze.camera import Camera
 from gaze.config import GazeConfig, load_config
 from gaze.features import FEATURE_NAMES, extract, is_blinking, primary_face, separation
 from gaze.landmarks import LandmarkDetector
+from shared.logs import setup_logging
 
 log = logging.getLogger("gaze.feature_probe")
 
@@ -62,13 +63,12 @@ def live(cfg: GazeConfig, cam: Camera, det: LandmarkDetector) -> None:
 def compare(cfg: GazeConfig) -> None:
     """Guided test on the fullscreen overlay: every calibration point on every screen."""
     from gaze.session import run_session
-    from gaze.targets import label_samples
 
     result = run_session(cfg)
     if not result.completed:
         log.error("aborted, nothing to compare")
         return
-    labelled = label_samples(result.timeline, ((s.t, s) for s in result.samples))
+    labelled = result.labelled()
     by_screen: dict[int, list[np.ndarray]] = {}
     no_face = blinks = 0
     for target, sample in labelled:
@@ -103,7 +103,7 @@ def compare(cfg: GazeConfig) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    setup_logging("feature_probe", "%(asctime)s %(message)s")
     parser = argparse.ArgumentParser(description="Inspect gaze features from the camera.")
     parser.add_argument("--compare", action="store_true", help="guided test on all screens")
     args = parser.parse_args()

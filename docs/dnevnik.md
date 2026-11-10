@@ -404,3 +404,139 @@ Pronađeno pri planiranju launchera, koji programe zaustavlja signalom SIGTERM:
 - `gaze.main` i `gaze.calibration` na SIGTERM se nisu gasili uredno, pa postavka kamere nije bila vraćena. Sad SIGTERM radi isto što i Ctrl+C (`shared/signals.py`, zajedničko i za `app.main`).
 - **Pad Qt-a pri prekidu kalibracije signalom** (segmentation fault u 3 od 16 pokušaja, s nasumičnim trenutkom prekida). Uzrok: Python obradi signal između bilo koje dvije naredbe u glavnoj niti, dakle i usred `paintEvent`, a gašenje Qt-a odatle ruši Qt-ov Wayland kod. Popravak: obrada signala samo postavlja zastavicu, a stvarno gašenje radi tajmer od 16 ms, izvan crtanja. Nakon toga je bilo 0 padova u 30 pokušaja, a s kamerom 12 od 12 prekida u raznim trenucima bez pada i uz vraćenu postavku kamere.
 - Ako se kalibracija prekine dok se kamera još pokreće, nit kamere se sad uredno zaustavi prije izlaza.
+
+### Launcher: jedan prozor za kalibraciju i pokretanje (`python -m okom`)
+
+**Zašto:** dosad su trebala dva terminala i tri naredbe. Na novom računalu (npr. u učionici) ili za sudionika korisničkog testa to je nepraktično, a lako pokretanje je i samo po sebi tema komunikacije čovjeka i stroja. Ideja je Mateova.
+
+**Kako radi**
+- Mali prozor (PySide6, tekst na engleskom kao i vodič) prikazuje stanje: ekrane u protokolnom redoslijedu, backend za fokus, je li MediaPipe model preuzet i zadnju kalibraciju za upisani uvjet. Ako je kalibracija snimljena s drukčijim ekranima, prikazuje se upozorenje.
+- Gumbi: **Calibrate** (vodič s točkama), **Start / Stop**, **Hide to tray** (ikona u traci sustava s izbornikom Show / Start / Quit). Kvačica **Share camera (OBS)** pokreće kameru kroz `pw-v4l2`.
+- **Launcher samo pokreće postojeće programe** (`app.main`, `gaze.main`, `gaze.calibration`) kao zasebne procese, preko `QProcess`. Arhitektura s dva procesa i UDP-om ostaje ista, a svaki program i dalje radi i sam iz terminala.
+- Gumbi su onemogućeni kad nemaju smisla: Start bez kalibracije, Calibrate dok program radi, jer oba trebaju kameru.
+- **Stop** šalje SIGTERM, a nakon 5 s SIGKILL ako proces još radi. Ako se jedan od dva programa sam ugasi, launcher zaustavi i drugog, prikaže grešku i otvori log. Zatvaranje prozora zaustavlja sve i gasi launcher.
+- Logovi oba procesa vide se u skrivenom prikazu "Show log" (zadnjih 1000 redaka, s oznakom `[app]` / `[gaze]` / `[calibration]`).
+- Logika bez Qt-a (naredbe, zadnja kalibracija po uvjetu, opis starosti) je u `okom/commands.py` i ima testove.
+
+Za uredno zaustavljanje launcher se oslanja na gašenje na SIGTERM (odjeljak iznad).
+
+**Provjereno (launcher upravljan iz skripte, slike prozora pregledane):**
+- Start pokreće oba procesa i uključuje zatamnjenje.
+- Stop ih gasi, isključuje zatamnjenje i vraća postavku kamere.
+- Calibrate s uvjetom bez snimanja: Start je onemogućen. Prekinuta kalibracija ništa ne sprema i vraća launcher u stanje mirovanja.
+
+105 testova prolazi.
+
+### Povratna informacija pri kalibraciji
+
+**Problem (Mateo):** ako se tijekom kalibracije ne gleda pravi ekran ili kamera ne vidi lice, kalibracija se spremi, a greška se vidi tek kad `gaze.main` ne može naučiti model ili radi loše.
+
+**Upozorenje uživo** (`gaze/overlay.py`, `gaze/session.py`)
+- Nit kamere pamti kad je zadnji put vidjela lice. Ako lica nema dulje od `calibration.face_warning_s` (0,5 s), rub aktivnog ekrana postaje crven, a na dnu piše *"Can't see your face: face the camera and check the light"*. Korisnik problem vidi odmah i može ga ispraviti dok snimanje traje.
+- Snimanje se ne prekida: uzorci bez lica se ionako ne koriste.
+- Je li korisnik gledao **pravi** ekran ne može se pouzdano znati za vrijeme snimanja, jer model tada još ne postoji. Zato postoji ocjena na kraju.
+
+**Ocjena kvalitete nakon snimanja** (`gaze.models.assess`, `gaze.calibration.record_quality`)
+- Odmah nakon spremanja snimanje se ocijeni istom metodom kao `eval.screen_accuracy` (leave-one-point-out), s modelom iz konfiguracije. Rezultat se zapisuje u `meta.json` kao polje `quality`.
+- Tri ishoda, s porukom koja kaže što napraviti:
+  - **good** (≥ `calibration.good_accuracy`, 95 %): npr. *"screens told apart in 99.6 % of frames"*
+  - **weak**: *"screens told apart in only 72 % of frames: they look too alike to the camera. Follow the dot on each screen and calibrate again"*
+  - **unusable** (lice viđeno na manje od 2 točke nekog ekrana): *"face seen at only 0 of 15 points on screen 1 (eDP-1): look at that screen during its part…"*
+  - Ako više od 20 % uzoraka nema lice, poruka dodaje *"check the light"*.
+- Launcher uz kalibraciju prikazuje ocjenu u boji (zeleno, narančasto, crveno), a nakon kalibracije i poruku. **Start je onemogućen za neupotrebljivu kalibraciju.** Kod slabe kalibracije odluka je na korisniku.
+- `gaze.main` za neupotrebljivu kalibraciju umjesto tracebacka javlja razlog i "calibrate again".
+
+**Naknadno ocijenjena postojeća snimanja** (u `meta.json` dodano je samo polje `quality`, ostalo je provjereno nepromijenjeno):
+
+| Snimanje | Ocjena |
+| --- | --- |
+| `20261110-204709_normal` | good, 99,6 % |
+| `20261110-205000_naocale` | good, 99,8 % |
+| `20261110-215841_normal` (snimljeno preko launchera) | good, **96,5 %** |
+
+Treće snimanje je primjetno slabije od prvog u istim uvjetima: donji red monitora ima 86,7 %, a donji red laptopa 94,4 %. **Točnost dakle varira između kalibracija iste osobe**, za ~3 postotna boda. To je argument za prikaz ocjene u GUI-ju i nalaz za rad: jedna kalibracija nije dovoljna za pouzdan broj, treba ih više.
+
+**Greška pronađena pri prvoj probi (Mateo: "ne da mi kalibrirati"):** nit za snimanje dobila je atribut `_started`, a to ime već interno koristi Pythonov `threading.Thread`. `start()` se zato srušio (`'float' object has no attribute 'is_set'`), pa kalibracija nije ni krenula. Ista vrsta greške dogodila se danas već jednom (`_stop`). Test nije pomogao jer je objekt stvarao zaobilazeći konstruktor.
+- Popravak: atribut je preimenovan u `_ready_at`.
+- **Novi test** čita imena atributa koje koriste metode klase `_Recorder` i provjerava da se nijedno ne poklapa s privatnim atributima klase `Thread`. Provjereno je da test pada kad se greška vrati.
+- Nakon popravka kalibracija na sustavu prolazi do kraja, sprema se i dobiva ocjenu.
+
+112 testova prolazi.
+
+### Zapisivanje logova u datoteke
+
+**Zašto (Mateo):** lakše traženje grešaka. Današnji pad kalibracije vidio se samo u terminalu, a iz launchera se ne bi vidio ni toliko.
+
+**Kako radi** (`shared/logs.py`)
+- Svaki program (`app`, `gaze`, `calibration`, `mock_gaze`, `feature_probe`, `launcher`) uz terminal piše i u vlastitu datoteku po pokretanju: `data/logs/<datum-vrijeme>_<program>.log`.
+- Prvi redak datoteke je točna naredba. Svaki zapis ima datum, milisekunde, razinu, nit i modul.
+- **Neuhvaćene greške**, i u glavnoj i u pozadinskim nitima, upisuju se s cijelim tracebackom prije nego program završi (`sys.excepthook`, `threading.excepthook`).
+- Čuva se zadnjih 30 datoteka po programu, a starije se brišu.
+- Ako se datoteka ne može napisati (npr. disk samo za čitanje), program radi dalje i samo to javi.
+- Launcher ima gumb **Open logs** koji otvara mapu. U svoju datoteku zapisuje koje je procese pokrenuo i s kojim su izlaznim kodom završili.
+- Dijagnostički alati (`detect`, `kde_wayland`, `camera`, `eval`) i dalje pišu samo u terminal.
+
+**Privatnost:** logovi aplikacije sadrže **naslove prozora**, a oni mogu biti osobni (npr. ime razgovora). `data/` se nikad ne commita. Prije korisničkog testa treba odlučiti hoće li se naslovi u logu skrivati.
+
+**Provjereno na sustavu:** `app` i `gaze` napisali su svoje datoteke, a namjerni pad (nepostojeća kalibracija) završio je u datoteci kao `CRITICAL uncaught exception` s cijelim tracebackom.
+
+115 testova prolazi.
+
+### Kalibracija: krivi ekran i pauziranje
+
+**Problem (Mateo):** kalibracija je krenula na ekranu 0, a on je gledao ekran 1, i ništa se nije dogodilo. Upozorenje "nema lica" pokriva samo slučaj kad kamera ne vidi lice. Kad korisnik gleda krivi ekran, lice se vidi. Uz to je poruka bila sitna i pri dnu ekrana.
+
+**a) Ekran koji se ne kalibrira pokazuje kamo gledati.** Sad preko sredine ima veliku strelicu prema pravom ekranu, izračunatu iz rasporeda ekrana ("↑ Look at the screen ABOVE"), umjesto sitnog sivog "Look at screen 0". Korisnik koji gleda krivi ekran vidi uputu baš tamo gdje gleda. Ovo ne treba nikakvo prepoznavanje i radi i pri prvoj kalibraciji.
+
+**b) Prepoznavanje krivog ekrana uživo, uz model prethodne kalibracije**
+- Na početku kalibracije uzima se najnovija kalibracija ocijenjena kao **good**, snimljena s istim ekranima. Prednost ima isti uvjet, a ako takve nema, uzima se bilo koja dobra (`pick_prior`). Slaba ili neupotrebljiva kalibracija se nikad ne koristi, jer bi se njezine greške činile kao korisnikove.
+- Nit kamere za svaku sliku procijeni koji ekran korisnik gleda. Kao "krivi ekran" računa se samo pouzdana procjena (`conf ≥ 0,9`) koja traje barem 0,7 s (`WrongScreenDetector`), pa kratki pogled u stranu i nesigurno područje uz rub između ekrana nikad ne aktiviraju upozorenje.
+- Tada **točka čeka** (`PlaybackClock`: vrijeme rasporeda stoji). Ekran koji korisnik gleda postaje crven ("You are looking at this screen. The dot waits for you."), a aktivni ekran piše "Paused: look at this screen".
+- Uzorci od trenutka kad je korisnik skrenuo pogled (a ne tek od potvrde, 0,7 s kasnije) do nastavka izbacuju se iz snimanja. Pauze i izbačeni intervali bilježe se u realnom vremenu, a `label_samples` ih koristi da vremena snimanja preslika na raspored.
+- Bez prethodne dobre kalibracije provjere nema. Tada pomažu (a) i ocjena kvalitete na kraju.
+
+**c) Upozorenje "nema lica"** je sad veliko i na sredini ekrana. I tada točka čeka, jer su uzorci bez lica ionako beskorisni.
+
+**Zaštita:** pauza dulja od `max_pause_s` (30 s), npr. kad korisnik ode, prekida kalibraciju s jasnom porukom. Bez toga bi vodič čekao zauvijek. Ovo je uočeno pri planiranju probe, prije nego se dogodilo.
+
+**Usput:** odbrojavanje i brojač točaka bili su u gornjem lijevom kutu i preklapali su prvu točku mreže (vidi se na slici ekrana). Sad su na sredini, između gornjeg i srednjeg reda točaka, gdje točke nikad nema.
+
+**Pronađeno testom:** uzorci snimljeni za vrijeme pauze bili su pridruženi točki na kojoj je raspored stao. Sad se izbacuju.
+
+**Prekidači** (`gaze/config.yaml`, `calibration`): `pause_on_problems`, `wrong_screen_check`, `wrong_screen_after_s`, `wrong_screen_conf`, `max_pause_s`.
+
+**Provjereno**
+- Bez kamere: slike svih stanja (krivi ekran, nema lica, pauza) su pregledane. Pauza i izbacivanje imaju točna vremena (krivi pogled od 0,2 s, pauza od 0,9 s). Dugo čekanje prekida kalibraciju.
+- S kamerom i prethodnim modelom: tijekom dijela za laptop provjera je uhvatila pogled na monitor ("looking at screen 0 instead of 1"). Točka je čekala 1,6 s i nastavila kad je korisnik pogledao laptop. Kvaliteta skraćene kalibracije bila je 98,3 %.
+
+122 testa prolaze.
+
+### Uvjet kalibracije kao padajući izbornik
+
+- Polje za uvjet u launcheru je sad padajući izbornik u koji se može i pisati. Nudi unaprijed zadane uvjete (`normal`, `glasses`, `dim`, `bright`, `posture`) i sve uvjete koji već postoje u snimanjima (npr. `naocale`). Može se upisati i nova oznaka (mala slova, brojke, `_`, `-`). Nova oznaka se nakon kalibracije pojavljuje na popisu.
+- Unaprijed zadani uvjeti su u `okom/commands.py` (`PRESET_CONDITIONS`).
+
+123 testa prolaze.
+
+### Koja se kalibracija koristi
+
+**Prijedlog (Mateo):** ako je nova kalibracija lošija od prošle, ne uzimati je.
+
+**Odluka:** slaba i neupotrebljiva kalibracija se ne uzima, ali starija se ne bira samo zato što ima višu ocjenu:
+- Ocjena mjeri koliko se kalibracija slaže **sama sa sobom** (leave-one-point-out na vlastitim podacima). Ocjene različitih snimanja zato se ne mogu pošteno uspoređivati.
+- Najnovija kalibracija najbolje odražava **sadašnje** svjetlo i držanje.
+- Poštena usporedba bila bi provjera svih kalibracija na istim novim podacima (brza provjera s 5 točaka, plan za Fazu 2).
+
+**Pravilo** (`gaze/selection.py`, jedno mjesto za `gaze.main`, launcher i provjeru krivog ekrana):
+1. najnovija kalibracija ocijenjena kao **good** (snimanja iz vremena prije ocjenjivanja računaju se kao dobra);
+2. ako za uvjet postoje samo slabe, uzima se najnovija slaba, uz upozorenje;
+3. neupotrebljiva se nikad ne uzima.
+- Modul čita samo `meta.json` (bez numpyja, kamere i MediaPipea), pa ga launcher koristi bez učitavanja gaze enginea.
+- **Launcher predaje točnu kalibraciju** `gaze.main` preko `--recording`, pa se pokreće upravo ona koja je prikazana u prozoru. Uz nju piše i koje su novije preskočene i zašto ("newer one from today 22:24 is weak, not used").
+- Poruka nakon kalibracije gleda **najnovije** snimanje, a ne odabrano. Bez toga bi slaba nova kalibracija (uz stariju dobru) bila prijavljena kao "aborted". Ovo je uočeno pri pregledu koda, prije pokretanja.
+
+**Provjereno na stvarnim podacima:** snimanje `20261110-222408_normal` (Mateo, pri isprobavanju) ocijenjeno je kao slabo (91,8 %). `gaze.main --condition normal` ga je preskočio ("not using … rated weak") i uzeo `20261110-215841_normal`. Launcher je prikazao isto i pokrenuo `gaze.main --recording …215841_normal`.
+
+**Za kasnije (u planu rada):** profili za korisnički test (`P01` + uvjet) s odabirom određenog snimanja u GUI-ju, te brza provjera s 5 točaka koja pošteno uspoređuje kalibracije.
+
+131 test prolazi.

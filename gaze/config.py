@@ -43,6 +43,13 @@ class CalibrationConfig:
     countdown_s: float
     settle_s: float
     record_s: float
+    face_warning_s: float
+    good_accuracy: float
+    pause_on_problems: bool
+    wrong_screen_check: bool
+    wrong_screen_after_s: float
+    wrong_screen_conf: float
+    max_pause_s: float
 
 
 @dataclass(frozen=True, slots=True)

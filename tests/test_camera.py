@@ -72,3 +72,30 @@ def test_native_stderr_capture_restores_fd() -> None:
         raise RuntimeError("boom")
     assert out.text == "before failure"  # captured even when the block fails
     os.write(2, b"")  # fd 2 is usable again
+
+
+def test_recorder_counts_time_without_face() -> None:
+    from gaze.session import _Recorder
+
+    rec = _Recorder.__new__(_Recorder)  # no camera: only the bookkeeping
+    rec._ready_at = time.time() - 2.0
+    rec._last_face = None
+    assert rec.seconds_without_face() == pytest.approx(2.0, abs=0.1)  # never seen: since start
+    rec._last_face = time.time() - 0.2
+    assert rec.seconds_without_face() == pytest.approx(0.2, abs=0.1)
+
+
+def test_recorder_does_not_shadow_thread_internals() -> None:
+    """Thread keeps private state (_started, _stop...); overwriting it broke start() twice."""
+    import inspect
+    import threading
+
+    from gaze.session import _Recorder
+
+    used = set()  # attribute names our own methods touch
+    for _, fn in inspect.getmembers(_Recorder, inspect.isfunction):
+        if fn.__qualname__.startswith("_Recorder."):
+            used |= set(fn.__code__.co_names)
+    names = set(vars(threading.Thread())) | set(vars(threading.Thread))
+    thread_private = {n for n in names if n.startswith("_") and not n.startswith("__")}
+    assert not used & thread_private

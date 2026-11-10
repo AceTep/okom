@@ -29,6 +29,7 @@ Dok gaze engine nije gotov, `app/mock_gaze.py` šalje iste poruke, a pogled glum
 | Vodič preko cijelog ekrana (točke za kalibraciju) | gotovo |
 | Kalibracija, model za ekran, mjerenje točnosti | gotovo (99,8 % po slici, i s naočalama) |
 | Prebacivanje ekrana pogledom, kamera → aplikacija (`gaze/main.py`) | gotovo |
+| Launcher (`python -m okom`): kalibracija, start/stop, traka sustava | gotovo |
 | Prebacivanje po prozorima (točka pogleda) | nije počelo |
 | Windows, Hyprland, Sway, GNOME | nije počelo |
 
@@ -49,7 +50,15 @@ python scripts/download_models.py  # MediaPipe model u models/
 
 Okruženje mora biti aktivno (`source .venv/bin/activate`) u svakom terminalu.
 
-**Prebacivanje ekrana pogledom**: prvo jednom kalibracija, zatim dva terminala:
+**Najlakše, preko launchera:**
+
+```bash
+python -m okom
+```
+
+Otvara se prozor sa stanjem (ekrani, backend, model, kalibracija s ocjenom kvalitete) i gumbima **Calibrate**, **Start / Stop** i **Hide to tray**. Tijekom kalibracije točka čeka ako kamera ne vidi lice ili (uz prethodnu dobru kalibraciju) gledaš krivi ekran, a nakon kalibracije launcher kaže je li dobra. Kvačica **Share camera (OBS)** dijeli kameru s OBS-om. Launcher samo pokreće programe ispod, pa sve radi i iz terminala:
+
+**Prebacivanje ekrana pogledom iz terminala**: prvo jednom kalibracija, zatim dva terminala:
 
 ```bash
 python -m gaze.calibration --condition normal   # jednom: prati točku po oba ekrana
@@ -95,6 +104,10 @@ ruff check . && ruff format .        # lint i format
 
 Nepoznat ili nedostajući ključ u konfiguraciji je greška, pa se tipfeler odmah vidi.
 
+## Logovi
+
+Svaki program piše log svakog pokretanja u `data/logs/<datum-vrijeme>_<program>.log`, zajedno s cijelim tracebackom ako se sruši. U launcheru ih otvara gumb **Open logs**.
+
 ## Privatnost
 
-Snimke lica, kalibracijski podaci i logovi spremaju se u `data/` i nikad se ne commitaju. Gaze engine ne sprema video, za modele su dovoljne značajke.
+Snimke lica, kalibracijski podaci i logovi spremaju se u `data/` i nikad se ne commitaju. Logovi sadrže naslove prozora. Gaze engine ne sprema video, za modele su dovoljne značajke.

@@ -19,6 +19,7 @@ import dataclasses
 import json
 import logging
 import re
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,14 +28,14 @@ import numpy as np
 
 from gaze.config import GazeConfig
 from gaze.features import Face, Features, extract
+from gaze.selection import CALIBRATION_DIR, pick_prior, read_recordings
 from gaze.session import SessionResult
-from gaze.targets import label_samples
+from shared.logs import setup_logging
 from shared.signals import sigterm_as_keyboard_interrupt
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = REPO_ROOT / "data" / "calibration"
+DATA_DIR = CALIBRATION_DIR  # one definition, in gaze/selection.py
 FORMAT_VERSION = 1
 
 
@@ -74,7 +75,7 @@ class Recording:
 
 
 def save(result: SessionResult, cfg: GazeConfig, condition: str, out_dir: Path = DATA_DIR) -> Path:
-    labelled = label_samples(result.timeline, ((s.t, s) for s in result.samples))
+    labelled = result.labelled()
     if not labelled:
         raise ValueError("no labelled samples to save")
     faces = [s.face for _, s in labelled]
@@ -150,7 +151,7 @@ def main() -> None:
     from gaze.config import load_config
     from gaze.session import run_session
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    setup_logging("calibration", "%(asctime)s %(message)s")
     parser = argparse.ArgumentParser(description="Record a calibration session.")
     parser.add_argument(
         "--condition",
@@ -164,14 +165,64 @@ def main() -> None:
     sigterm_as_keyboard_interrupt()  # Stop in the launcher must restore the camera too
     cfg = load_config()
     try:
-        result = run_session(cfg)
+        result = run_session(cfg, predict=prior_model(cfg, args.condition))
     except KeyboardInterrupt:
         log.error("aborted, nothing saved")
         return
     if not result.completed:
         log.error("aborted, nothing saved")
         return
-    save(result, cfg, args.condition)
+    path = save(result, cfg, args.condition)
+    quality = record_quality(path, cfg)
+    level = {"good": logging.INFO, "weak": logging.WARNING}.get(quality.verdict, logging.ERROR)
+    log.log(level, "calibration quality: %s, %s", quality.verdict.upper(), quality.message)
+
+
+def prior_model(cfg: GazeConfig, condition: str, data_dir: Path = DATA_DIR):
+    """predict() from the newest good calibration with the same screens, or None.
+
+    Used during a new calibration to notice when the user looks at the wrong
+    screen. Prefers the same condition; a weak or unusable calibration is never
+    used, because its mistakes would look like the user's.
+    """
+    if not cfg.calibration.wrong_screen_check:
+        return None
+
+    from PySide6.QtWidgets import QApplication
+
+    from gaze.models import train_predictor
+    from gaze.overlay import ordered_qt_screens
+
+    QApplication.instance() or QApplication(sys.argv)
+    screens = [s.name() for s in ordered_qt_screens()]
+    prior = pick_prior(read_recordings(data_dir), screens, condition)
+    if prior is None:
+        log.info("no earlier good calibration with these screens: wrong-screen check off")
+        return None
+    path = prior.path
+    m = cfg.model
+    predictor, _ = train_predictor(
+        load(path), m.kind, m.feature_set, cfg.features.blink_threshold, m.softness_deg
+    )
+    log.info("wrong-screen check uses %s", path.name)
+    return predictor.predict
+
+
+def record_quality(path: Path, cfg: GazeConfig):
+    """Assess a saved recording with the configured model and store the result in meta.json."""
+    from gaze.models import assess
+
+    rec = load(path)
+    quality = assess(
+        rec,
+        cfg.model.kind,
+        cfg.model.feature_set,
+        cfg.features.blink_threshold,
+        cfg.calibration.good_accuracy,
+    )
+    rec.meta["quality"] = quality.as_dict()
+    (path / "meta.json").write_text(json.dumps(rec.meta, indent=2))
+    return quality
 
 
 if __name__ == "__main__":
