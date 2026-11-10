@@ -1,0 +1,21 @@
+# Config files (app/config.yaml, gaze/config.yaml)
+pyyaml>=6.0
+# D-Bus client for the KDE backend (pure Python, no system libs)
+jeepney>=0.9; sys_platform == "linux"
+
+# Gaze engine: face and iris landmarks. Pulls in numpy and opencv-contrib-python,
+# which we also use directly for the camera. Do not add a separate opencv-python:
+# two OpenCV packages in one environment overwrite each other's files.
+mediapipe>=0.10.14
+
+# Fullscreen calibration overlay on a chosen screen (works natively on Wayland).
+# Pinned: 6.12.0 decrements the refcount of None on every void call, which crashes
+# Python 3.11 after a few seconds of painting (measured, see docs/dnevnik.md).
+PySide6-Essentials==6.11.3
+
+# Screen classifier (logistic regression) and its evaluation
+scikit-learn>=1.5
+
+# Development
+pytest>=8.0
+ruff>=0.6

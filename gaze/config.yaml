@@ -1,0 +1,45 @@
+# Gaze engine settings. Every value here has a matching field in gaze/config.py.
+
+camera:
+  device: 0         # /dev/video0 on Linux; /dev/video1 on the demo laptop is a metadata node
+  width: 1280
+  height: 720
+  fps: 30           # requested; the camera may deliver less in dim light
+  fourcc: MJPG      # MJPG allows 720p at full rate over USB; empty string = driver default
+  fixed_framerate: true  # Linux: stop the camera from slowing to ~15 fps in dim light
+                         # (image gets slightly darker); restored on exit
+
+landmarks:
+  model_path: models/face_landmarker.task  # relative to the repo root
+  num_faces: 2                    # > 1 so that a second person in frame is noticed
+  min_detection_confidence: 0.5
+  min_presence_confidence: 0.5
+  min_tracking_confidence: 0.5
+  quiet_native_logs: true         # hide MediaPipe's harmless C++ warnings while the model loads
+
+features:
+  blink_threshold: 0.5            # eyeBlink blendshape at or above this = blinking
+
+calibration:
+  grid_cols: 5        # points per screen: grid_cols x grid_rows
+  grid_rows: 3
+  margin: 0.08        # outer points' distance from the screen edge, fraction of the screen
+  countdown_s: 3.0    # before each screen
+  settle_s: 0.4       # after the dot moves; eyes need time to get there, not recorded
+  record_s: 0.6       # recorded per point
+
+udp:
+  host: 127.0.0.1
+  port: 5555
+
+model:
+  kind: threshold     # threshold (one threshold on head pitch) | logreg
+  feature_set: head   # logreg only: head | eyes | head+eyes | head+eyes+posture
+  softness_deg: 2.0   # threshold only: confidence = sigmoid(distance from threshold / softness)
+  unsure_below: 0.55  # send screen = null when the confidence is lower
+
+smoothing:
+  enabled: true       # One Euro filter on the features before the model
+  min_cutoff_hz: 1.0  # smoothing while steady (lower = smoother, more lag)
+  beta: 0.05          # how fast the cutoff rises with speed (higher = less lag when moving)
+  d_cutoff_hz: 1.0
