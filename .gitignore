@@ -17,3 +17,4 @@ models/
 .idea/
 .DS_Store
 Thumbs.db
+graphify-out/
