@@ -17,8 +17,17 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QKeyEvent, QPainter, QPaintEvent, QPen
+from PySide6.QtCore import QEventLoop, QPointF, QRectF, Qt, QTimer
+from PySide6.QtGui import (
+    QColor,
+    QCursor,
+    QFont,
+    QGuiApplication,
+    QKeyEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
+)
 from PySide6.QtWidgets import QApplication, QWidget
 
 from gaze.targets import (
@@ -52,6 +61,31 @@ def ordered_qt_screens() -> list:
     return order_screens(
         QGuiApplication.screens(), key=lambda s: (s.name(), s.geometry().x(), s.geometry().y())
     )
+
+
+_SETTLE_MS = 150  # time for the window manager to map a window / see the pointer move
+
+
+def _pump(ms: int) -> None:
+    """Run the Qt event loop for a while. time.sleep() would not do: Qt only sends the
+    map request of a window from its event loop, so the window would still be pending."""
+    loop = QEventLoop()
+    QTimer.singleShot(ms, loop.quit)
+    loop.exec()
+
+
+def _select_monitor(screen) -> None:  # noqa: ANN001
+    """Make a tiling X11 window manager (dwm) put the next window on this screen.
+
+    dwm ignores the position a window asks for and puts new windows on the monitor
+    that has the pointer, so without this every overlay lands on the same monitor
+    and hides the others. Moving the pointer first fixes it. Harmless elsewhere,
+    and skipped on Wayland, where Qt cannot move the pointer anyway.
+    """
+    if QGuiApplication.platformName() != "xcb":
+        return
+    QCursor.setPos(screen, screen.geometry().center())
+    _pump(_SETTLE_MS)
 
 
 class ScreenWindow(QWidget):
@@ -217,12 +251,15 @@ def run_overlay(
         for s in screens
     ]
     windows = []
+    pointer_before = QCursor.pos()
     for i, screen in enumerate(screens):
         arrows = {j: direction(rects[i], rects[j]) for j in range(len(rects)) if j != i}
         w = ScreenWindow(i, arrows, abort)
         w.setScreen(screen)
         w.setGeometry(screen.geometry())
+        _select_monitor(screen)
         w.showFullScreen()
+        _pump(_SETTLE_MS)  # let this window be mapped before the pointer moves on
         windows.append(w)
 
     end = timeline[-1].end
@@ -287,6 +324,8 @@ def run_overlay(
         timer.stop()
         for w in windows:
             w.close()
+        if QGuiApplication.platformName() == "xcb":
+            QCursor.setPos(pointer_before)
     real = time.time()
     if wrong_started:
         excluded.append((wrong_started.pop(), real))

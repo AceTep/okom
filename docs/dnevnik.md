@@ -563,3 +563,15 @@ Treće snimanje je primjetno slabije od prvog u istim uvjetima: donji red monito
 **Provjereno:** na stvarnom dwm-u s dva monitora (DP-2 i DP-0): popis ekrana i prozora, fokus na drugi monitor trajao je 11 ms, događaj fokusa javlja ispravan ekran, povratak na prvi prozor radi. Testovi za čistu logiku (pridruživanje ekranu, izbor metode) rade bez X poslužitelja. Cijeli tok s `app.main` i pogledom još nije isprobavan.
 
 146 testova prolazi.
+
+### Kalibracija na dwm-u: oba prozora na istom monitoru
+
+**Pronađeno (Dominik, dwm, dva monitora):** kalibracija je pokazala "Look at the screen on the LEFT" na prednjem monitoru, a lijevi monitor je ostao običan desktop bez točaka. Točke su se zatim pojavile na prednjem monitoru.
+
+**Uzrok:** dwm ne poštuje položaj koji prozor traži, nego svaki novi prozor stavlja na monitor koji ima pokazivač (`c->mon = selmon` u `manage()`). Oba preklopna prozora (`ScreenWindow`) završila su na prednjem monitoru, jedan preko drugog. Izmjereno: `okom calibration 0` i `okom calibration 1` bila su oba na `DP-2`. Brojanje ekrana i smjer strelice bili su ispravni.
+
+**Popravak** (`gaze/overlay.py`, samo kad je Qt platforma `xcb`): prije prikaza svakog prozora pokazivač se pomakne na sredinu njegovog ekrana (`QCursor.setPos`), pa dwm odabere taj monitor. Nakon prikaza čeka se 150 ms u Qt petlji događaja, jer Qt šalje zahtjev za prikaz tek iz petlje. Pokazivač se na kraju vraća na staro mjesto.
+
+**Zamka:** prvi pokušaj čekao je s `time.sleep()`. To ne radi, jer je prvi prozor još bio neprikazan kad se pokazivač pomaknuo na drugi monitor, pa su oba opet završila na istom. Čekanje mora biti u petlji događaja.
+
+**Provjereno:** `run_overlay` na stvarnom dwm-u: `okom calibration 0` na `DP-0` (2560x1440), `okom calibration 1` na `DP-2` (3840x2160), pokazivač vraćen na isto mjesto. Cijela kalibracija s kamerom još nije ponovno pokrenuta. 146 testova prolazi.
