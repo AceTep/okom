@@ -31,6 +31,7 @@ Dok gaze engine nije gotov, `app/mock_gaze.py` šalje iste poruke, a pogled glum
 | Prebacivanje ekrana pogledom, kamera → aplikacija (`gaze/main.py`) | gotovo |
 | Launcher (`python -m okom`): kalibracija, start/stop, traka sustava | gotovo |
 | Prebacivanje po prozorima (točka pogleda) | nije počelo |
+| Prebacivanje fokusa na X11 (dwm i drugi EWMH upravitelji prozora) | gotovo, isprobano na dwm-u |
 | Windows, Hyprland, Sway, GNOME | nije počelo |
 
 Detaljan zapis odluka i mjerenja je u [`docs/dnevnik.md`](docs/dnevnik.md).

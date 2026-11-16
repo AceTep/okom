@@ -30,6 +30,11 @@ class HighlightConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class X11Config:
+    focus_method: str
+
+
+@dataclass(frozen=True, slots=True)
 class MockGazeConfig:
     rate_hz: float
     noise_cm: float
@@ -43,6 +48,7 @@ class AppConfig:
     udp: UdpConfig
     decision: DecisionConfig
     highlight: HighlightConfig
+    x11: X11Config
     mock_gaze: MockGazeConfig
 
 

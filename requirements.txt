@@ -2,6 +2,8 @@
 pyyaml>=6.0
 # D-Bus client for the KDE backend (pure Python, no system libs)
 jeepney>=0.9; sys_platform == "linux"
+# X11 backend (dwm, i3, ...): window list and focus over the X protocol, pure Python
+python-xlib>=0.33; sys_platform == "linux"
 
 # Gaze engine: face and iris landmarks. Pulls in numpy and opencv-contrib-python,
 # which we also use directly for the camera. Do not add a separate opencv-python:

@@ -76,3 +76,9 @@ def test_create_falls_back_when_not_implemented() -> None:
     backend = create_backend("linux", {"SWAYSOCK": "/x"}, {})
     assert isinstance(backend, DummyBackend)
     assert "not implemented" in backend.reason
+
+
+def test_default_factories_cover_x11() -> None:
+    from app.backends.detect import _factories
+
+    assert {"kde_wayland", "x11"} <= set(_factories())

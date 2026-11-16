@@ -540,3 +540,26 @@ Treće snimanje je primjetno slabije od prvog u istim uvjetima: donji red monito
 **Za kasnije (u planu rada):** profili za korisnički test (`P01` + uvjet) s odabirom određenog snimanja u GUI-ju, te brza provjera s 5 točaka koja pošteno uspoređuje kalibracije.
 
 131 test prolazi.
+
+### X11 backend (dwm)
+
+**Cilj:** prebacivanje fokusa pogledom na X11, prvo za dwm (tiling, dva monitora).
+
+**Problem:** standardni način, poruka `_NET_ACTIVE_WINDOW`, u dwm-u ne daje fokus. dwm je samo označi kao "urgent". Zato `app/backends/x11.py` ima dvije metode (`x11.focus_method` u `app/config.yaml`):
+- `ewmh`: poruka `_NET_ACTIVE_WINDOW`, za upravitelje koji je podržavaju.
+- `pointer`: pokazivač miša se pomakne na sredinu ciljnog prozora (`XWarpPointer`). dwm fokusira prozor ispod pokazivača i bira njegov monitor. Prozori u tilingu se ne preklapaju, pa je cilj jednoznačan.
+- `auto` bira `pointer` za dwm, a `ewmh` za ostale.
+
+**Odbačeno:** simuliranje tipki `MODKEY+,` / `MODKEY+.` (`focusmon`). Treba ručno pratiti trenutni monitor (prazan monitor nema aktivan prozor), ne zna fokusirati određeni prozor i puca ako se promijene tipke.
+
+**Detalji**
+- Popis prozora iz `_NET_CLIENT_LIST` i `_NET_CLIENT_LIST_STACKING`, ekrani iz RandR-a (python-xlib, nova ovisnost jer je čisti Python).
+- dwm prozore drugih tagova ne skriva, nego ih miče daleko izvan ekrana. Zato se prozor pridružuje ekranu s kojim se najviše preklapa, a prozori bez preklapanja se izbacuju.
+- dwm zna isti klijent navesti dvaput u `_NET_CLIENT_LIST`, pa se popis deduplicira.
+- Promjene fokusa izvan OKOM-a čitaju se preko `PropertyNotify` na `_NET_ACTIVE_WINDOW`.
+
+**Ograničenja:** prazan monitor nema prozor u koji bi se pokazivač mogao pomaknuti, pa pogled na njega ništa ne radi. Pokazivač vidljivo skoči pri svakom prebacivanju. Na X11 nema isticanja aktivnog prozora ("Dim Inactive" je samo za KDE).
+
+**Provjereno:** na stvarnom dwm-u s dva monitora (DP-2 i DP-0): popis ekrana i prozora, fokus na drugi monitor trajao je 11 ms, događaj fokusa javlja ispravan ekran, povratak na prvi prozor radi. Testovi za čistu logiku (pridruživanje ekranu, izbor metode) rade bez X poslužitelja. Cijeli tok s `app.main` i pogledom još nije isprobavan.
+
+146 testova prolazi.

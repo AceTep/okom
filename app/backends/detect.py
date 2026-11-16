@@ -14,6 +14,8 @@ log = logging.getLogger(__name__)
 
 HINTS = {
     "windows": "Install pywin32: uv pip install pywin32",
+    "x11": "Install python-xlib: uv pip install python-xlib. "
+    "The window manager must set EWMH properties: xprop -root _NET_SUPPORTING_WM_CHECK",
     "kde_wayland": "Check that KWin scripting is reachable: "
     "busctl --user introspect org.kde.KWin /Scripting",
 }
@@ -44,7 +46,13 @@ def _factories() -> dict[str, Callable[[], FocusBackend]]:
 
         return KdeWaylandBackend()
 
-    return {"kde_wayland": kde}
+    def x11() -> FocusBackend:
+        from app.backends.x11 import X11Backend
+        from app.config import load_config
+
+        return X11Backend(load_config().x11.focus_method)
+
+    return {"kde_wayland": kde, "x11": x11}
 
 
 def create_backend(
