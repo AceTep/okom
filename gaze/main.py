@@ -90,13 +90,18 @@ def make_predictor(
     m = cfg.model
     try:
         predictor, data = train_predictor(
-            rec, m.kind, m.feature_set, cfg.features.blink_threshold, m.softness_deg
+            rec,
+            m.kind,
+            m.feature_set,
+            cfg.features.blink_threshold,
+            m.softness_deg,
+            m.threshold_feature,
         )
     except ValueError as exc:
         raise SystemExit(f"cannot use calibration {exc}; calibrate again") from None
     train_acc = float((predictor.model.predict(data.x) == data.screen).mean())
     detail = (
-        f"pitch threshold {predictor.model.threshold_:.1f} deg"
+        f"{predictor.names[0]} threshold {predictor.model.threshold_:.1f} deg"
         if cfg.model.kind == "threshold"
         else f"features {cfg.model.feature_set}"
     )

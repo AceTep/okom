@@ -575,3 +575,33 @@ Treće snimanje je primjetno slabije od prvog u istim uvjetima: donji red monito
 **Zamka:** prvi pokušaj čekao je s `time.sleep()`. To ne radi, jer je prvi prozor još bio neprikazan kad se pokazivač pomaknuo na drugi monitor, pa su oba opet završila na istom. Čekanje mora biti u petlji događaja.
 
 **Provjereno:** `run_overlay` na stvarnom dwm-u: `okom calibration 0` na `DP-0` (2560x1440), `okom calibration 1` na `DP-2` (3840x2160), pokazivač vraćen na isto mjesto. Cijela kalibracija s kamerom još nije ponovno pokrenuta. 146 testova prolazi.
+
+### Ekrani jedan pokraj drugog (model gleda yaw, ne pitch)
+
+**Pronađeno (Dominik):** kalibracija s monitorom ispred i drugim lijevo dala je ocjenu WEAK (52,4 %), iako su točke slijeđene. Dosad dokumentirani i mjereni postav (Mateo) je laptop dolje i monitor gore, pa je zadani model **prag na pitchu** (nagib glave gore-dolje). Pri gledanju ulijevo glava se ne naginje, nego okreće.
+
+**Uzrok (mjereno na snimanju `20261116-191329_normal`, 525 uzoraka, slaba svjetlost i naočale):**
+
+| Značajka | Lijevi (ekran 0) | Prednji (ekran 1) | d′ |
+| --- | --- | --- | --- |
+| pitch | 15,2° | 15,8° | **0,12** |
+| yaw | 33,2° | −2,8° | **4,16** |
+
+| Model | Točnost (leave-one-point-out) |
+| --- | --- |
+| prag na pitchu | 52,4 % (nasumično) |
+| prag na yawu | 100 % |
+| logreg [head] | 99,6 % |
+
+Dakle slaba ocjena nije bila (samo) zbog svjetla: model je gledao krivu os.
+
+**Popravak:** `model.threshold_feature` u `gaze/config.yaml` (`auto` | `pitch` | `yaw`). `auto` odlučuje po rasporedu ekrana spremljenom uz snimanje (`gaze/models.py: threshold_feature`, pravilo je isto kao za strelice, `gaze/targets.py: layout_axis`): ekrani jedan iznad drugog → pitch, jedan pokraj drugog → yaw. Mateov postav i dalje koristi pitch. Raspored se čita sam, korisnik ga ne mora upisivati. `eval.screen_accuracy` sad uspoređuje i `threshold(yaw)`.
+
+**Ograničenja**
+- Točnost je izmjerena unutar jednog snimanja (leave-one-point-out), što je optimistično. Provjera između dva snimanja (jedno za treniranje, drugo za test) još nije napravljena.
+- Prag radi samo za dva ekrana. Tri ili više ekrana, ili dijagonalni raspored (npr. jedan lijevo i jedan gore), traže `logreg`, što nije mjereno.
+- Okret glave ~35° mogao bi kod nekih korisnika izgubiti lice. Na ovom snimanju lice je bilo u svim uzorcima.
+- Za kasnije: upit korisniku o fizičkom rasporedu monitora, ako se razlikuje od onog u postavkama sustava.
+
+151 test prolazi.
+

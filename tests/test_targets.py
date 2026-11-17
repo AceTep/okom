@@ -106,6 +106,15 @@ def test_direction() -> None:
     assert direction((0, 0, 1920, 1080), (1920, 0, 1920, 1080))[0] == "→"
 
 
+def test_layout_axis() -> None:
+    from gaze.targets import layout_axis
+
+    assert layout_axis((0, 0, 1920, 1080), (0, 1080, 1920, 1080)) == "vertical"
+    assert layout_axis((0, 0, 1920, 1080), (1920, 0, 1920, 1080)) == "horizontal"
+    # side by side with a vertical offset (a lower monitor on the left): still horizontal
+    assert layout_axis((2560, 0, 3840, 2160), (0, 251, 2560, 1440)) == "horizontal"
+
+
 def test_paused_for() -> None:
     from gaze.targets import PlaybackClock
 

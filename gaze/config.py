@@ -62,6 +62,7 @@ class UdpConfig:
 class ModelConfig:
     kind: str
     feature_set: str
+    threshold_feature: str
     softness_deg: float
     unsure_below: float
 
