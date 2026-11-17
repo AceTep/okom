@@ -188,11 +188,22 @@ class WrongScreenDetector:
 Rect = tuple[int, int, int, int]  # x, y, w, h
 
 
-def direction(from_rect: Rect, to_rect: Rect) -> tuple[str, str]:
-    """(arrow, word) pointing from one screen to another, e.g. ("↑", "ABOVE")."""
+def _delta(from_rect: Rect, to_rect: Rect) -> tuple[float, float]:
+    """Vector between the centres of two screens."""
     fx, fy = from_rect[0] + from_rect[2] / 2, from_rect[1] + from_rect[3] / 2
     tx, ty = to_rect[0] + to_rect[2] / 2, to_rect[1] + to_rect[3] / 2
-    dx, dy = tx - fx, ty - fy
-    if abs(dy) >= abs(dx):
+    return tx - fx, ty - fy
+
+
+def layout_axis(from_rect: Rect, to_rect: Rect) -> str:
+    """ "vertical" if the second screen lies mainly above or below the first, else "horizontal"."""
+    dx, dy = _delta(from_rect, to_rect)
+    return "vertical" if abs(dy) >= abs(dx) else "horizontal"
+
+
+def direction(from_rect: Rect, to_rect: Rect) -> tuple[str, str]:
+    """(arrow, word) pointing from one screen to another, e.g. ("↑", "ABOVE")."""
+    dx, dy = _delta(from_rect, to_rect)
+    if layout_axis(from_rect, to_rect) == "vertical":
         return ("↑", "ABOVE") if dy < 0 else ("↓", "BELOW")
     return ("←", "on the LEFT") if dx < 0 else ("→", "on the RIGHT")
