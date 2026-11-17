@@ -14,6 +14,7 @@ import logging
 import os
 import signal
 import sys
+from collections.abc import Callable
 
 from PySide6.QtCore import QProcess, QProcessEnvironment, QRegularExpression, Qt, QTimer, QUrl
 from PySide6.QtGui import (
@@ -63,6 +64,22 @@ log = logging.getLogger("okom")
 
 STOP_TIMEOUT_MS = 5000  # SIGTERM first; SIGKILL only if a process does not exit by then
 OK, BAD = "✓", "✗"
+
+
+def kill_later(procs: dict[str, QProcess], timeout_ms: int, on_kill: Callable[[str], None]) -> None:
+    """SIGKILL these processes if they still run after the timeout.
+
+    Only the processes passed in, never whatever runs by then: a calibration
+    started right after Stop must not be killed by the Stop timer.
+    """
+
+    def kill() -> None:
+        for label, proc in procs.items():
+            if proc.state() != QProcess.ProcessState.NotRunning:
+                on_kill(label)
+                proc.kill()
+
+    QTimer.singleShot(timeout_ms, kill)
 
 
 def make_icon() -> QIcon:
@@ -317,13 +334,11 @@ class Launcher(QWidget):
         self.refresh()
         for proc in self._procs.values():
             proc.terminate()  # SIGTERM: both programs clean up on it
-        QTimer.singleShot(STOP_TIMEOUT_MS, self._kill_leftovers)
+        kill_later(dict(self._procs), STOP_TIMEOUT_MS, self._killed)
 
-    def _kill_leftovers(self) -> None:
-        for label, proc in list(self._procs.items()):
-            if proc.state() != QProcess.ProcessState.NotRunning:
-                self._log(label, "did not stop in time, killing it")
-                proc.kill()
+    def _killed(self, label: str) -> None:
+        log.warning("%s did not stop in time, killed it", label)
+        self._log(label, "did not stop in time, killing it")
 
     def _run(self, cmd: Command) -> None:
         proc = QProcess(self)

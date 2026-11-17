@@ -605,3 +605,15 @@ Dakle slaba ocjena nije bila (samo) zbog svjetla: model je gledao krivu os.
 
 151 test prolazi.
 
+
+### Launcher: Stop je ubijao kalibraciju pokrenutu odmah nakon njega
+
+**Pronađeno (Mateo, 17.11.):** Start, Stop, pa odmah Calibrate. Nakon oko 4 s launcher javlja "Calibration failed (exit code 9)", a u logu kalibracije nema nikakve greške.
+
+**Uzrok:** Stop šalje SIGTERM i postavlja timer od 5 s koji ubija (SIGKILL) procese koji se nisu ugasili. Timer je gledao procese koji rade **u trenutku kad istekne**, a ne one koje je Stop gasio. App i gaze ugasili su se za pola sekunde, a kalibracija pokrenuta sekundu kasnije bila je jedini pokrenuti proces kad je timer istekao, pa ju je ubio. Kod 9 je SIGKILL. Iz logova: Stop u 19:16:12,7, Calibrate u 19:16:14,3, kraj kalibracije u 19:16:18,1.
+
+**Posljedica:** ubijena kalibracija nije stigla vratiti postavku kamere `exposure_dynamic_framerate` (ostala je 0).
+
+**Popravak:** `kill_later()` u `okom/launcher.py` pamti procese koje Stop gasi i ubija samo njih. Ubijanje se sad zapisuje i u log datoteku, a ne samo u prozor launchera.
+
+**Provjereno:** test `tests/test_launcher_stop.py` sa stvarnim procesima: proces pokrenut nakon Stopa preživi timer, a onaj koji se nije ugasio bude ubijen. 153 testa prolaze.
