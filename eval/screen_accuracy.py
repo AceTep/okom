@@ -23,6 +23,7 @@ from gaze.calibration import list_recordings, load
 from gaze.config import load_config
 from gaze.models import (
     FEATURE_SETS,
+    HEAD,
     MODELS,
     build_dataset,
     coverage_problem,
@@ -42,7 +43,7 @@ def candidates():
 
 def usable(rec, blink: float) -> bool:
     """Log sample counts; False if the recording cannot be evaluated."""
-    data = build_dataset([rec], ("pitch",), blink)
+    data = build_dataset([rec], HEAD, blink)
     total = len(rec.t)
     log.info(
         "  %d samples: %d used, %d without a face, %d blinking",
@@ -81,7 +82,7 @@ def per_recording(rec, blink: float) -> None:
 
 
 def cross(recs, blink: float) -> None:
-    recs = [r for r in recs if coverage_problem(build_dataset([r], ("pitch",), blink)) is None]
+    recs = [r for r in recs if coverage_problem(build_dataset([r], HEAD, blink)) is None]
     if len(recs) < 2:
         return
     log.info("=== train on one recording, test on another")

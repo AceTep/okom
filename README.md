@@ -27,7 +27,7 @@ Dok gaze engine nije gotov, `app/mock_gaze.py` šalje iste poruke, a pogled glum
 | Odluka o prebacivanju između ekrana + lažni pogled mišem | gotovo, ručno isprobano |
 | Kamera, značajke lica (poza glave, šarenica) | gotovo |
 | Vodič preko cijelog ekrana (točke za kalibraciju) | gotovo |
-| Kalibracija, model za ekran, mjerenje točnosti | gotovo (99,8 % po slici, i s naočalama) |
+| Kalibracija, model za ekran, mjerenje točnosti | gotovo (99,8 % po slici, i s naočalama). Dva ekrana jedan iznad drugog ili jedan pokraj drugog; tri i više ekrana nije isprobano |
 | Prebacivanje ekrana pogledom, kamera → aplikacija (`gaze/main.py`) | gotovo |
 | Launcher (`python -m okom`): kalibracija, start/stop, traka sustava | gotovo |
 | Prebacivanje po prozorima (točka pogleda) | nije počelo |

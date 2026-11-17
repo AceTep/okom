@@ -16,9 +16,14 @@ from gaze.session import Sample, SessionResult
 from gaze.targets import Target, build_timeline
 from tests.test_features import make_face, rotation
 
+STACKED = [("HDMI-A-1", 0, 0, 1920, 1080), ("eDP-1", 0, 1080, 1920, 1080)]
+SIDE_BY_SIDE = [("DP-0", 0, 0, 1920, 1080), ("DP-2", 1920, 0, 1920, 1080)]
 
-def fake_session(pitch_by_screen=(-20.0, -5.0), noise=1.0, seed=0) -> SessionResult:
-    """Two screens, 5x3 points, 30 Hz; pitch depends on screen and point row."""
+
+def fake_session(
+    pitch_by_screen=(-20.0, -5.0), noise=1.0, seed=0, yaw_by_screen=(0.0, 0.0), screens=STACKED
+) -> SessionResult:
+    """Two screens, 5x3 points, 30 Hz; pitch (and yaw) depend on the screen, pitch on the row."""
     cfg = load_config()
     timeline = build_timeline([0, 1], cfg.calibration, start=1000.0)
     rng = np.random.default_rng(seed)
@@ -29,10 +34,10 @@ def fake_session(pitch_by_screen=(-20.0, -5.0), noise=1.0, seed=0) -> SessionRes
         face = make_face()
         if isinstance(target, Target):
             pitch = pitch_by_screen[target.screen] + 6 * (target.y - 0.5) + rng.normal(0, noise)
-            face = Face(face.points, {"eyeBlinkLeft": 0.0}, rotation(pitch, 0, 0))
+            yaw = yaw_by_screen[target.screen] + rng.normal(0, noise)
+            face = Face(face.points, {"eyeBlinkLeft": 0.0}, rotation(pitch, yaw, 0))
         samples.append(Sample(t, face, 1))
         t += 1 / 30
-    screens = [("HDMI-A-1", 0, 0, 1920, 1080), ("eDP-1", 0, 1080, 1920, 1080)]
     return SessionResult(timeline, samples, True, screens)
 
 
@@ -150,3 +155,56 @@ def test_quality_hint_when_face_often_missing(tmp_path) -> None:
     session = drop_faces(fake_session(), screen=0, points=set(range(1, 10)))
     q = quality_of(session, tmp_path, "dim")
     assert "check the light" in q.message
+
+
+def side_by_side(**kw) -> SessionResult:
+    """The user's setup: the head turns left and right, the pitch stays the same."""
+    return fake_session((-10.0, -10.0), yaw_by_screen=(30.0, 0.0), screens=SIDE_BY_SIDE, **kw)
+
+
+def test_threshold_feature_follows_layout() -> None:
+    from gaze.models import threshold_feature
+
+    def meta(layout):
+        return [dict(zip(("name", "x", "y", "w", "h"), s, strict=True)) for s in layout]
+
+    assert threshold_feature("auto", meta(STACKED)) == "pitch"
+    assert threshold_feature("auto", meta(SIDE_BY_SIDE)) == "yaw"
+    assert threshold_feature("auto", meta(STACKED[:1])) == "pitch"
+    assert threshold_feature("yaw", meta(STACKED)) == "yaw"  # forced
+    assert threshold_feature("pitch", meta(SIDE_BY_SIDE)) == "pitch"
+    with pytest.raises(ValueError, match="threshold_feature"):
+        threshold_feature("roll", meta(STACKED))
+
+
+def test_side_by_side_is_good_with_auto_and_weak_on_pitch(tmp_path) -> None:
+    from gaze.calibration import record_quality
+
+    cfg = load_config()
+    path = save(side_by_side(), cfg, "lr", out_dir=tmp_path)
+    q = record_quality(path, cfg)  # threshold_feature: auto -> yaw
+    assert q.verdict == "good" and q.model == "threshold(yaw)"
+
+    from gaze.models import assess
+
+    rec = load(path)
+    forced = assess(rec, "threshold", "head", 0.5, cfg.calibration.good_accuracy, "pitch")
+    assert forced.verdict == "weak" and forced.model == "threshold(pitch)"
+
+
+def test_stacked_still_uses_pitch(tmp_path) -> None:
+    q = quality_of(fake_session(), tmp_path, "stacked")
+    assert q.verdict == "good" and q.model == "threshold(pitch)"
+
+
+def test_train_predictor_uses_yaw_for_side_by_side(tmp_path) -> None:
+    from gaze.models import train_predictor
+
+    rec = load(save(side_by_side(), load_config(), "lr", out_dir=tmp_path))
+    predictor, _ = train_predictor(rec, "threshold", "head", 0.5, 2.0)
+    assert predictor.names == ("yaw",)
+    vector = np.zeros(len(FEATURE_NAMES))
+    vector[FEATURE_NAMES.index("yaw")] = 30.0
+    assert predictor.predict(vector)[0] == 0  # turned left = screen 0
+    vector[FEATURE_NAMES.index("yaw")] = 0.0
+    assert predictor.predict(vector)[0] == 1

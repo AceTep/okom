@@ -202,7 +202,12 @@ def prior_model(cfg: GazeConfig, condition: str, data_dir: Path = DATA_DIR):
     path = prior.path
     m = cfg.model
     predictor, _ = train_predictor(
-        load(path), m.kind, m.feature_set, cfg.features.blink_threshold, m.softness_deg
+        load(path),
+        m.kind,
+        m.feature_set,
+        cfg.features.blink_threshold,
+        m.softness_deg,
+        m.threshold_feature,
     )
     log.info("wrong-screen check uses %s", path.name)
     return predictor.predict
@@ -219,6 +224,7 @@ def record_quality(path: Path, cfg: GazeConfig):
         cfg.model.feature_set,
         cfg.features.blink_threshold,
         cfg.calibration.good_accuracy,
+        cfg.model.threshold_feature,
     )
     rec.meta["quality"] = quality.as_dict()
     (path / "meta.json").write_text(json.dumps(rec.meta, indent=2))

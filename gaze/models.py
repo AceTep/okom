@@ -19,6 +19,7 @@ from sklearn.preprocessing import StandardScaler
 
 from gaze.calibration import Recording
 from gaze.features import FEATURE_NAMES, is_blinking
+from gaze.targets import layout_axis
 
 HEAD = ("pitch", "yaw", "roll")
 EYES = ("iris_h_right", "iris_v_right", "iris_h_left", "iris_v_left")
@@ -31,6 +32,29 @@ FEATURE_SETS: dict[str, tuple[str, ...]] = {
     "head+eyes": HEAD + EYES,
     "head+eyes+posture": HEAD + EYES + POSTURE,
 }
+
+
+THRESHOLD_FEATURES = ("auto", "pitch", "yaw")
+
+
+def threshold_feature(setting: str, screens: Sequence[dict]) -> str:
+    """Head angle the threshold model splits on: pitch for stacked screens, yaw for side by side.
+
+    `screens` is the list stored in a recording's meta.json (name, x, y, w, h). With
+    "auto" the choice follows the layout of the first two screens; "pitch" and "yaw" force it.
+    """
+    if setting not in THRESHOLD_FEATURES:
+        raise ValueError(
+            f"model.threshold_feature must be one of {THRESHOLD_FEATURES}, got {setting!r}"
+        )
+    if setting != "auto":
+        return setting
+    if len(screens) < 2:
+        return "pitch"
+    a, b = screens[0], screens[1]
+    rect_a = (a["x"], a["y"], a["w"], a["h"])
+    rect_b = (b["x"], b["y"], b["w"], b["h"])
+    return "pitch" if layout_axis(rect_a, rect_b) == "vertical" else "yaw"
 
 
 class ThresholdClassifier:
@@ -66,6 +90,7 @@ def make_logreg():
 MODELS: dict[str, tuple[Callable[[], object], tuple[str, ...] | None]] = {
     # name: (factory, fixed feature set or None = try every FEATURE_SETS entry)
     "threshold(pitch)": (ThresholdClassifier, ("pitch",)),
+    "threshold(yaw)": (ThresholdClassifier, ("yaw",)),
     "logreg": (make_logreg, None),
 }
 
@@ -177,10 +202,15 @@ class ScreenPredictor:
 
 
 def train_predictor(
-    recording: Recording, kind: str, feature_set: str, blink_threshold: float, softness: float
+    recording: Recording,
+    kind: str,
+    feature_set: str,
+    blink_threshold: float,
+    softness: float,
+    threshold_setting: str = "auto",
 ) -> tuple[ScreenPredictor, Dataset]:
     if kind == "threshold":
-        names: tuple[str, ...] = ("pitch",)
+        names: tuple[str, ...] = (threshold_feature(threshold_setting, recording.meta["screens"]),)
         model = ThresholdClassifier()
     elif kind == "logreg":
         if feature_set not in FEATURE_SETS:
@@ -225,10 +255,15 @@ def assess(
     feature_set: str,
     blink_threshold: float,
     good_accuracy: float,
+    threshold_setting: str = "auto",
 ) -> Quality:
     """Check a recording right after it was made, the same way eval.screen_accuracy does."""
-    names = ("pitch",) if kind == "threshold" else FEATURE_SETS[feature_set]
-    label = kind if kind == "threshold" else f"{kind} [{feature_set}]"
+    if kind == "threshold":
+        names: tuple[str, ...] = (threshold_feature(threshold_setting, recording.meta["screens"]),)
+        label = f"threshold({names[0]})"
+    else:
+        names = FEATURE_SETS[feature_set]
+        label = f"{kind} [{feature_set}]"
     no_face = float(np.mean(~recording.has_face)) if len(recording.has_face) else 1.0
     data = build_dataset([recording], names, blink_threshold)
 
